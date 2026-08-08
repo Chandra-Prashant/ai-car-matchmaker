@@ -1,0 +1,245 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------
+   Design tokens
+
+   The visual language is borrowed from vehicle spec sheets and homologation
+   paperwork: hairline rules, monospaced numerals, calm density. The single
+   accent is signal amber — indicator-lamp amber, native to the subject.
+
+   Every number in the interface (price, mileage, score, seat count) is set
+   in mono. That single rule is what makes the UI read as a specification
+   rather than a chat log.
+   --------------------------------------------------------------------- */
+
+:root {
+  /* Surface */
+  --paper: #f6f7f8;
+  --card: #ffffff;
+  --sunken: #eef0f2;
+
+  /* Ink */
+  --ink: #14181c;
+  --ink-2: #4a545e;
+  --ink-3: #7d8894;
+
+  /* Rules — hairlines carry the structure, so there are two weights */
+  --rule: #dfe3e7;
+  --rule-strong: #c3cad1;
+
+  /* Signal amber: the one accent. Used for the active step, the current
+     value, and nothing else. */
+  --signal: #e07b00;
+  --signal-soft: #fff4e3;
+
+  /* Status */
+  --ok: #2e7d5b;
+  --warn: #b4690e;
+  --stop: #b42318;
+
+  /* Criterion colours for the contribution bar — a cool-to-warm ramp so the
+     segments read as one continuous scale rather than a categorical legend */
+  --c1: #1f4e5f;
+  --c2: #2c6e7f;
+  --c3: #3f8f8f;
+  --c4: #6aa88a;
+  --c5: #9dbd83;
+  --c6: #cfcb7f;
+  --c7: #e0b45f;
+  --c8: #e07b00;
+  --c9: #c25d2e;
+  --c10: #9c4a3c;
+
+  --radius: 3px;
+  --radius-lg: 6px;
+
+  --font-display: "Archivo", "Helvetica Neue", sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------
+   Type scale
+   --------------------------------------------------------------------- */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-size: 1.375rem;
+  line-height: 1.15;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Every figure in the interface. Tabular so columns align down a list. */
+.figure {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.label {
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------------------
+   Structure
+   --------------------------------------------------------------------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+}
+
+/* Spec rows: label left, value right, hairline between. The core repeating
+   unit of the whole interface. */
+.spec-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4375rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.spec-row:last-child {
+  border-bottom: none;
+}
+
+.spec-row dt {
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+}
+
+.spec-row dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  text-align: right;
+}
+
+/* A value the agent has just captured. The amber fades out, so the eye is
+   drawn to change rather than to a permanently highlighted field. */
+@keyframes settle {
+  from {
+    background: var(--signal-soft);
+    color: var(--signal);
+  }
+  to {
+    background: transparent;
+    color: inherit;
+  }
+}
+
+.settled {
+  animation: settle 1.6s ease-out;
+}
+
+/* ---------------------------------------------------------------------
+   Controls
+   --------------------------------------------------------------------- */
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.btn {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.btn:hover {
+  opacity: 0.86;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-quiet {
+  background: transparent;
+  color: var(--ink-2);
+  border-color: var(--rule-strong);
+}
+
+.field {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 0.625rem 0.75rem;
+  resize: none;
+}
+
+.field:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------------------
+   Accessibility floor
+   --------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::selection {
+  background: var(--signal-soft);
+}
+
+/* Scrollbars: thin enough not to interrupt the hairline grid */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--rule-strong);
+  border-radius: 5px;
+  border: 3px solid var(--paper);
+}
