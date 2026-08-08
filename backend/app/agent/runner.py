@@ -85,9 +85,13 @@ PHASE_GUIDANCE = {
         "widen the search yourself."
     ),
     Phase.RECOMMEND: (
-        "Rank the shortlist. Pass `emphasis` to rank_shortlist reflecting how "
-        "the user described their priorities — if they stressed price, raise "
-        "budget; if they were relaxed about age, lower recency. Present the "
+        "Rank the shortlist. ALWAYS pass `emphasis` to rank_shortlist, "
+        "derived from how the user described their needs — not from what you "
+        "think matters generally. A stated ceiling they seemed anxious about "
+        "raises budget; 'doesn't matter how old' lowers recency; a trip with "
+        "a fixed party size raises seats; a named city raises location. Use "
+        "values between -0.15 and 0.15. If they truly expressed no "
+        "priorities at all, pass an empty object. Present the "
         "top few. The interface already shows each car's name, price, specs, "
         "matched criteria and trade-offs as cards — do NOT list those again "
         "in prose. Say only what the cards cannot: which one you would pick "
