@@ -77,7 +77,22 @@ export function useAgentSession(): AgentSession {
   }, []);
 
   const append = useCallback((entry: TranscriptEntry) => {
-    setTranscript((prev) => [...prev, entry]);
+    setTranscript((prev) => {
+      // A tool's "finished" entry replaces its "running" one rather than
+      // appending, so each step occupies one line that resolves in place
+      // instead of two that read as repetition.
+      if (entry.type === "tool" && entry.status === "done") {
+        const index = prev.findLastIndex(
+          (e) => e.type === "tool" && e.status === "running" && e.name === entry.name,
+        );
+        if (index >= 0) {
+          const next = [...prev];
+          next[index] = entry;
+          return next;
+        }
+      }
+      return [...prev, entry];
+    });
   }, []);
 
   const send = useCallback(
@@ -223,6 +238,14 @@ function handleTool(
   // product is for.
   if (name === "rank_shortlist" && Array.isArray(result.rankings)) {
     const records = result.rankings as ReasoningRecord[];
+
+    // Rankings carry their listings, so a resumed session can render cards
+    // without having seen the search that produced them.
+    if (Array.isArray(result.listings)) {
+      for (const listing of result.listings as Listing[]) {
+        cache.current[listing.id] = listing;
+      }
+    }
     append({ id: nextId(), type: "tool", name, status: "done", summary });
     if (records.length > 0) {
       append({

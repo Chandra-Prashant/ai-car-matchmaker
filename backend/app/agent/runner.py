@@ -88,9 +88,12 @@ PHASE_GUIDANCE = {
         "Rank the shortlist. Pass `emphasis` to rank_shortlist reflecting how "
         "the user described their priorities — if they stressed price, raise "
         "budget; if they were relaxed about age, lower recency. Present the "
-        "top few with the reasoning attached to each, including what each one "
-        "compromises on. If the user is undecided between buying and renting, "
-        "use compute_tco."
+        "top few. The interface already shows each car's name, price, specs, "
+        "matched criteria and trade-offs as cards — do NOT list those again "
+        "in prose. Say only what the cards cannot: which one you would pick "
+        "and why, or what distinguishes them from each other. Two or three "
+        "sentences. If the user is undecided between buying and renting, use "
+        "compute_tco."
     ),
     Phase.BOOK: (
         "The user has chosen. Open the booking form with everything already "
@@ -239,6 +242,37 @@ def _auto_advance(state: SessionState) -> tuple[str, Phase] | None:
     return (decision.message, target) if decision.allowed else None
 
 
+def _echo_tool_call(call: Any) -> dict[str, Any]:
+    """Rebuild a tool call for the next request, preserving provider extras.
+
+    Gemini 3 signs its reasoning and attaches the signature to each tool call
+    at `extra_content.google.thought_signature`. It is a non-standard field,
+    so a naive reconstruction from id/name/arguments drops it — and the next
+    request is rejected with a 400 saying the signature is missing.
+
+    Carrying `extra_content` through verbatim fixes it without special-casing
+    any provider: anything a provider attaches comes back untouched.
+    """
+    echoed: dict[str, Any] = {
+        "id": call.id,
+        "type": "function",
+        "function": {
+            "name": call.function.name,
+            "arguments": call.function.arguments,
+        },
+    }
+
+    extra = getattr(call, "extra_content", None)
+    if extra is None:
+        # Unknown fields land in model_extra when the SDK parses a response
+        # containing keys it does not know about.
+        extra = (getattr(call, "model_extra", None) or {}).get("extra_content")
+    if extra:
+        echoed["extra_content"] = extra
+
+    return echoed
+
+
 class ModelRunner:
     """Drives the conversation with a real model."""
 
@@ -304,17 +338,7 @@ class ModelRunner:
                 {
                     "role": "assistant",
                     "content": reply.content,
-                    "tool_calls": [
-                        {
-                            "id": call.id,
-                            "type": "function",
-                            "function": {
-                                "name": call.function.name,
-                                "arguments": call.function.arguments,
-                            },
-                        }
-                        for call in calls
-                    ],
+                    "tool_calls": [_echo_tool_call(call) for call in calls],
                 }
             )
 
@@ -336,7 +360,11 @@ class ModelRunner:
 
                 yield tool_finished(name, summary, result)
 
-                if name == "advance_phase":
+                # A refusal that only says "already there" is an artefact of
+                # auto-advance beating the model to it, not a real block.
+                # Surfacing it would show a red line for something that went
+                # right.
+                if name == "advance_phase" and not summary.startswith("Already in"):
                     yield phase_event(
                         phase=state.phase.value,
                         allowed=bool(result.get("allowed")),

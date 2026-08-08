@@ -177,6 +177,14 @@ def _rank_shortlist(
         "weights": state.inferred_weights,
         "rankings": [record.model_dump(mode="json") for record in records],
         "explanations": explanations,
+        # The listings themselves travel with the rankings so a client can
+        # render cards without having witnessed the search that found them —
+        # which happens whenever a session is resumed.
+        "listings": [
+            repo.get(record.listing_id).model_dump(mode="json")
+            for record in records
+            if repo.get(record.listing_id) is not None
+        ],
     }
 
 

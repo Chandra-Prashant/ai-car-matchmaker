@@ -10,6 +10,7 @@
  */
 
 import { useState } from "react";
+import Markdown from "react-markdown";
 
 import { categoryLabel, km, rupees } from "@/lib/api";
 import type {
@@ -395,9 +396,11 @@ export function TranscriptItem({ entry }: { entry: TranscriptEntry }) {
       );
 
     case "assistant":
+      // The model writes markdown whether or not it is asked to. Rendering
+      // it is less brittle than instructing it not to.
       return (
-        <div style={{ whiteSpace: "pre-wrap", maxWidth: "58ch" }}>
-          {entry.text}
+        <div className="prose" style={{ maxWidth: "58ch" }}>
+          <Markdown>{entry.text}</Markdown>
         </div>
       );
 
