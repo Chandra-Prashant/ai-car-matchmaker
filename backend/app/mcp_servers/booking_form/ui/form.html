@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Booking</title>
+<style>
+  /* Fallbacks for every host variable used — hosts may pass a partial set
+     or none at all (spec: View Behavior, Theming). */
+  :root {
+    --color-background-primary: light-dark(#ffffff, #171717);
+    --color-background-secondary: light-dark(#f5f5f5, #232323);
+    --color-text-primary: light-dark(#171717, #fafafa);
+    --color-text-secondary: light-dark(#5c5c5c, #a3a3a3);
+    --color-text-danger: light-dark(#b42318, #f97066);
+    --color-border-primary: light-dark(#e0e0e0, #333333);
+    --color-border-danger: light-dark(#b42318, #f97066);
+    --font-sans: system-ui, -apple-system, sans-serif;
+    --border-radius-md: 8px;
+    color-scheme: light dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    font-family: var(--font-sans);
+    color: var(--color-text-primary);
+    background: var(--color-background-primary);
+    font-size: 14px;
+  }
+  h2 { margin: 0 0 4px; font-size: 16px; }
+  .sub { color: var(--color-text-secondary); margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .full { grid-column: 1 / -1; }
+  label { display: block; margin-bottom: 4px; color: var(--color-text-secondary); }
+  input, textarea {
+    width: 100%; padding: 8px 10px; font: inherit;
+    color: var(--color-text-primary);
+    background: var(--color-background-secondary);
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+  }
+  input.invalid, textarea.invalid { border-color: var(--color-border-danger); }
+  .err { color: var(--color-text-danger); min-height: 16px; font-size: 12px; }
+  .amount {
+    margin: 16px 0; padding: 12px;
+    background: var(--color-background-secondary);
+    border-radius: var(--border-radius-md);
+    display: flex; justify-content: space-between;
+  }
+  button {
+    padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer;
+    border: none; border-radius: var(--border-radius-md);
+    background: var(--color-text-primary);
+    color: var(--color-background-primary);
+  }
+  button.ghost {
+    background: transparent; color: var(--color-text-secondary);
+    border: 1px solid var(--color-border-primary);
+  }
+  button[disabled] { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; }
+  .done { padding: 16px; text-align: center; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="loading" class="sub">Loading booking form…</div>
+
+<form id="form" class="hidden" novalidate>
+  <h2 id="title">Booking</h2>
+  <div class="sub" id="subtitle"></div>
+
+  <div class="grid">
+    <div class="full">
+      <label for="full_name">Full name</label>
+      <input id="full_name" name="full_name" autocomplete="name">
+      <div class="err" data-err="full_name"></div>
+    </div>
+    <div>
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email">
+      <div class="err" data-err="email"></div>
+    </div>
+    <div>
+      <label for="phone">Phone</label>
+      <input id="phone" name="phone" autocomplete="tel">
+      <div class="err" data-err="phone"></div>
+    </div>
+    <div id="date_fields" class="full grid hidden">
+      <div>
+        <label for="start_date">From</label>
+        <input id="start_date" name="start_date" type="date">
+        <div class="err" data-err="start_date"></div>
+      </div>
+      <div>
+        <label for="end_date">Until</label>
+        <input id="end_date" name="end_date" type="date">
+        <div class="err" data-err="end_date"></div>
+      </div>
+    </div>
+    <div class="full">
+      <label for="pickup_city">City</label>
+      <input id="pickup_city" name="pickup_city">
+      <div class="err" data-err="pickup_city"></div>
+    </div>
+    <div class="full">
+      <label for="notes">Notes (optional)</label>
+      <textarea id="notes" name="notes" rows="2"></textarea>
+      <div class="err" data-err="notes"></div>
+    </div>
+  </div>
+
+  <div class="amount">
+    <span>Total</span><strong id="amount">—</strong>
+  </div>
+
+  <div class="row">
+    <button type="submit" id="submit">Confirm details</button>
+    <button type="button" class="ghost" id="cancel">Cancel</button>
+  </div>
+  <div class="err" data-err="_form"></div>
+</form>
+
+<div id="done" class="done hidden"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- JSON-RPC 2.0 over postMessage -------------------------------------
+  // The View acts as an MCP client; window.parent is the transport.
+  // (Spec: Communication Protocol / Transport Layer.)
+
+  var nextId = 1;
+  var pending = {};
+  var handlers = {};
+
+  window.addEventListener("message", function (event) {
+    var msg = event.data;
+    if (!msg || msg.jsonrpc !== "2.0") return;
+
+    if (msg.id !== undefined && pending[msg.id]) {
+      var p = pending[msg.id];
+      delete pending[msg.id];
+      if (msg.error) p.reject(new Error(msg.error.message || "RPC error"));
+      else p.resolve(msg.result);
+      return;
+    }
+    if (msg.method && handlers[msg.method]) {
+      handlers[msg.method](msg.params || {}, msg.id);
+    }
+  });
+
+  function request(method, params) {
+    var id = nextId++;
+    window.parent.postMessage(
+      { jsonrpc: "2.0", id: id, method: method, params: params || {} }, "*");
+    return new Promise(function (resolve, reject) {
+      pending[id] = { resolve: resolve, reject: reject };
+    });
+  }
+
+  function notify(method, params) {
+    window.parent.postMessage(
+      { jsonrpc: "2.0", method: method, params: params || {} }, "*");
+  }
+
+  function respond(id, result) {
+    if (id === undefined) return;
+    window.parent.postMessage({ jsonrpc: "2.0", id: id, result: result }, "*");
+  }
+
+  function on(method, fn) { handlers[method] = fn; }
+
+  function callTool(name, args) {
+    return request("tools/call", { name: name, arguments: args });
+  }
+
+  // Tool results arrive as a CallToolResult; structuredContent is what we want.
+  function structured(result) {
+    if (!result) return null;
+    if (result.structuredContent) return result.structuredContent;
+    try { return JSON.parse(result.content[0].text); } catch (e) { return null; }
+  }
+
+  // ---- Size reporting ----------------------------------------------------
+
+  var lastH = 0;
+  function reportSize() {
+    var h = document.documentElement.scrollHeight;
+    if (h !== lastH) {
+      lastH = h;
+      notify("ui/notifications/size-changed",
+             { width: document.documentElement.scrollWidth, height: h });
+    }
+  }
+  if (window.ResizeObserver) {
+    new ResizeObserver(reportSize).observe(document.documentElement);
+  }
+
+  // ---- Theming -----------------------------------------------------------
+
+  function applyHostStyles(ctx) {
+    if (!ctx) return;
+    var vars = (ctx.styles || {}).variables || {};
+    Object.keys(vars).forEach(function (k) {
+      if (vars[k]) document.documentElement.style.setProperty(k, vars[k]);
+    });
+    var css = ((ctx.styles || {}).css || {}).fonts;
+    if (css) {
+      var tag = document.createElement("style");
+      tag.textContent = css;
+      document.head.appendChild(tag);
+    }
+    if (ctx.theme) document.documentElement.style.colorScheme = ctx.theme;
+  }
+
+  // ---- Form state --------------------------------------------------------
+
+  var draft = null;
+  var el = {
+    loading: document.getElementById("loading"),
+    form: document.getElementById("form"),
+    done: document.getElementById("done"),
+    title: document.getElementById("title"),
+    subtitle: document.getElementById("subtitle"),
+    amount: document.getElementById("amount"),
+    dates: document.getElementById("date_fields"),
+    submit: document.getElementById("submit")
+  };
+
+  function setError(field, message) {
+    var box = document.querySelector('[data-err="' + field + '"]');
+    if (box) box.textContent = message || "";
+    var input = document.getElementById(field);
+    if (input) input.classList.toggle("invalid", Boolean(message));
+    reportSize();
+  }
+
+  function clearErrors() {
+    document.querySelectorAll(".err").forEach(function (b) { b.textContent = ""; });
+    document.querySelectorAll(".invalid").forEach(function (i) {
+      i.classList.remove("invalid");
+    });
+  }
+
+  function money(n) {
+    return "Rs." + Number(n || 0).toLocaleString("en-IN");
+  }
+
+  function render(d, label) {
+    draft = d;
+    el.loading.classList.add("hidden");
+    el.form.classList.remove("hidden");
+
+    el.title.textContent = label || "Booking";
+    el.subtitle.textContent =
+      d.mode === "rent" ? "Rental booking" : "Purchase enquiry";
+
+    // Prefill, but every value stays editable (FR-018).
+    ["full_name", "email", "phone", "pickup_city",
+     "start_date", "end_date"].forEach(function (k) {
+      var input = document.getElementById(k);
+      if (input && d[k]) input.value = d[k];
+    });
+
+    if (d.mode === "rent") el.dates.classList.remove("hidden");
+    el.amount.textContent = money(d.amount_inr);
+    reportSize();
+  }
+
+  // Validate a field server-side on blur.
+  ["full_name", "email", "phone"].forEach(function (field) {
+    document.getElementById(field).addEventListener("blur", function (e) {
+      if (!e.target.value) return;
+      callTool("validate_booking_field", { field: field, value: e.target.value })
+        .then(function (r) {
+          var s = structured(r);
+          setError(field, s && !s.valid ? s.message : "");
+        })
+        .catch(function () { /* validation is advisory; never block typing */ });
+    });
+  });
+
+  el.form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!draft) return;
+    clearErrors();
+    el.submit.disabled = true;
+    el.submit.textContent = "Submitting…";
+
+    var payload = {
+      listing_id: draft.listing_id,
+      mode: draft.mode,
+      session_id: draft.session_id || null,
+      full_name: document.getElementById("full_name").value,
+      email: document.getElementById("email").value,
+      phone: document.getElementById("phone").value,
+      pickup_city: document.getElementById("pickup_city").value || null,
+      notes: document.getElementById("notes").value || null
+    };
+    if (draft.mode === "rent") {
+      payload.start_date = document.getElementById("start_date").value || null;
+      payload.end_date = document.getElementById("end_date").value || null;
+    }
+
+    callTool("submit_booking", payload).then(function (result) {
+      var s = structured(result);
+      el.submit.disabled = false;
+      el.submit.textContent = "Confirm details";
+
+      if (!s) { setError("_form", "Unexpected response from the server."); return; }
+
+      if (s.errors && Object.keys(s.errors).length) {
+        Object.keys(s.errors).forEach(function (f) { setError(f, s.errors[f]); });
+        return;
+      }
+
+      el.form.classList.add("hidden");
+      el.done.classList.remove("hidden");
+      el.done.innerHTML =
+        "<h2>Details saved</h2><div class='sub'>Booking " +
+        s.booking.id + " — " + money(s.booking.amount_inr) + "</div>";
+      reportSize();
+
+      // Hand back to the conversation so the agent moves to checkout.
+      request("ui/message", {
+        role: "user",
+        content: {
+          type: "text",
+          text: "I've completed the booking form. Booking reference " +
+                s.booking.id + ". Please take me to payment."
+        }
+      }).catch(function () {});
+    }).catch(function (err) {
+      el.submit.disabled = false;
+      el.submit.textContent = "Confirm details";
+      setError("_form", err.message || "Submission failed.");
+    });
+  });
+
+  document.getElementById("cancel").addEventListener("click", function () {
+    request("ui/message", {
+      role: "user",
+      content: { type: "text", text: "I've cancelled the booking form." }
+    }).catch(function () {});
+  });
+
+  // ---- Host notifications ------------------------------------------------
+
+  on("ui/notifications/tool-input", function () { /* args echoed; unused here */ });
+
+  on("ui/notifications/tool-result", function (params) {
+    var s = params.structuredContent;
+    if (!s && params.content) {
+      try { s = JSON.parse(params.content[0].text); } catch (e) { s = null; }
+    }
+    if (s && s.draft) render(s.draft, s.listing_label);
+    else if (s && s.error) {
+      el.loading.textContent = s.summary || "Could not open the form.";
+    }
+  });
+
+  on("ui/notifications/tool-cancelled", function (params) {
+    el.loading.classList.remove("hidden");
+    el.form.classList.add("hidden");
+    el.loading.textContent = "Cancelled: " + (params.reason || "unknown reason");
+  });
+
+  on("ui/notifications/host-context-changed", function (params) {
+    applyHostStyles(params);
+  });
+
+  // Host expects a response before tearing us down.
+  on("ui/resource-teardown", function (_params, id) { respond(id, {}); });
+
+  // ---- Handshake ---------------------------------------------------------
+
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "booking-form", version: "0.1.0" },
+    appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] }
+  }).then(function (result) {
+    applyHostStyles(result && result.hostContext);
+    notify("ui/notifications/initialized", {});
+    reportSize();
+  }).catch(function (err) {
+    el.loading.textContent = "Could not connect to the host: " + err.message;
+  });
+})();
+</script>
+</body>
+</html>

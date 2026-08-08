@@ -16,6 +16,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.listing import Base
 
+# Imported for side effects: registers the bookings table on Base.metadata.
+import app.models.booking  # noqa: F401
+
 _DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "seed" / "marketplace.db"
 
 
