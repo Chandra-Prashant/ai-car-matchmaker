@@ -194,6 +194,40 @@ def _compute_tco(
     return tco.compute_tco(session, listing_id, days).model_dump(mode="json")
 
 
+def _record_booking(
+    session: Session,
+    state: SessionState,
+    booking_id: str,
+    confirmation_reference: str | None = None,
+) -> dict:
+    """Record the booking a View created.
+
+    Bookings and payments happen inside MCP Apps, so their identifiers reach
+    the agent through the conversation rather than through a tool it called.
+    Recording them here is what lets the book -> complete guard verify a
+    confirmation actually exists (FR-022) instead of trusting the model's
+    word for it.
+    """
+    state.booking_id = booking_id
+    if confirmation_reference:
+        state.confirmation_reference = confirmation_reference
+    state.touch()
+
+    if confirmation_reference:
+        summary = (
+            f"Booking {booking_id} confirmed with reference "
+            f"{confirmation_reference}."
+        )
+    else:
+        summary = f"Booking {booking_id} recorded; payment still outstanding."
+
+    return {
+        "summary": summary,
+        "booking_id": booking_id,
+        "confirmation_reference": confirmation_reference,
+    }
+
+
 def _advance_phase(session: Session, state: SessionState, target: str) -> dict:
     """Propose a transition. The guard decides (Constitution III)."""
     try:
@@ -398,6 +432,22 @@ REGISTRY: dict[str, ToolSpec] = {
             required=["listing_id", "days"],
         ),
         handler=_compute_tco,
+    ),
+    "record_booking": ToolSpec(
+        name="record_booking",
+        description=(
+            "Record the booking the user completed in the form, and its "
+            "confirmation reference once payment has gone through. Take both "
+            "from what the user tells you after using those interfaces."
+        ),
+        schema=_object(
+            {
+                "booking_id": {"type": "string"},
+                "confirmation_reference": {"type": "string"},
+            },
+            required=["booking_id"],
+        ),
+        handler=_record_booking,
     ),
     "advance_phase": ToolSpec(
         name="advance_phase",

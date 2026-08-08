@@ -12,6 +12,8 @@
 import { useState } from "react";
 import Markdown from "react-markdown";
 
+import { McpAppFrame } from "@/components/mcp-host/McpAppFrame";
+
 import { categoryLabel, km, rupees } from "@/lib/api";
 import type {
   Listing,
@@ -376,7 +378,15 @@ function ActivityLine({
 
 /* ------------------------------------------------------------------ */
 
-export function TranscriptItem({ entry }: { entry: TranscriptEntry }) {
+export function TranscriptItem({
+  entry,
+  onAppMessage,
+}: {
+  entry: TranscriptEntry;
+  // A View's ui/message becomes the user's next turn — that is how
+  // booking hands off to checkout without the user retyping anything.
+  onAppMessage?: (text: string) => void;
+}) {
   switch (entry.type) {
     case "user":
       return (
@@ -465,6 +475,20 @@ export function TranscriptItem({ entry }: { entry: TranscriptEntry }) {
             ))}
           </div>
         </section>
+      );
+
+    case "mcpApp":
+      // A real MCP App: fetched from its server, rendered in a sandboxed
+      // View on a separate origin, talking back over postMessage.
+      return (
+        <McpAppFrame
+          uri={entry.uri}
+          server={entry.server}
+          toolName={entry.toolName}
+          toolInput={entry.toolInput}
+          toolResult={entry.toolResult}
+          onMessage={onAppMessage}
+        />
       );
 
     case "error":

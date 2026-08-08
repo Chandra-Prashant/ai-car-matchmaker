@@ -91,7 +91,9 @@
     font-family: var(--font-mono); font-size: 18px;
     color: var(--color-text-success); margin: 8px 0;
   }
-  .hidden { display: none; }
+  /* !important because elements toggled here also carry display from
+     .grid and friends, which would otherwise win on specificity. */
+  .hidden { display: none !important; }
 </style>
 </head>
 <body>

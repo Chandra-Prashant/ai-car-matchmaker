@@ -23,6 +23,8 @@ import type {
   TranscriptEntry,
 } from "@/lib/types";
 
+type ToolResult = Record<string, unknown> | null;
+
 let counter = 0;
 const nextId = () => `e${++counter}`;
 
@@ -148,6 +150,20 @@ export function useAgentSession(): AgentSession {
             case "tool":
               handleTool(data, append, listingCache);
               break;
+
+            case "ui": {
+              const frame = data.component as Record<string, unknown>;
+              append({
+                id: nextId(),
+                type: "mcpApp",
+                uri: String(frame.uri),
+                server: String(frame.server),
+                toolName: String(frame.toolName),
+                toolInput: (frame.toolInput ?? {}) as Record<string, unknown>,
+                toolResult: (frame.toolResult ?? null) as ToolResult,
+              });
+              break;
+            }
 
             case "error":
               append({

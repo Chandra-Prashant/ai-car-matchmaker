@@ -59,7 +59,9 @@
   button[disabled] { opacity: .5; cursor: default; }
   .row { display: flex; gap: 8px; }
   .done { padding: 16px; text-align: center; }
-  .hidden { display: none; }
+  /* !important because elements toggled here also carry display from
+     .grid and friends, which would otherwise win on specificity. */
+  .hidden { display: none !important; }
 </style>
 </head>
 <body>

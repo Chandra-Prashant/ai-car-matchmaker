@@ -68,11 +68,22 @@ export function McpAppFrame({
   const [error, setError] = useState<string | null>(null);
   const initialised = useRef(false);
 
+  // The message listener must stay attached for the whole life of the View.
+  // toolInput, toolResult and the callbacks are fresh identities on every
+  // parent render — and the transcript re-renders continuously while events
+  // stream — so depending on them directly would detach and reattach the
+  // listener repeatedly, dropping whatever handshake message arrived in the
+  // gap. Holding them in a ref lets the effect depend only on `resource`.
+  const latest = useRef({ toolName, toolInput, toolResult, onMessage, onClose });
+  latest.current = { toolName, toolInput, toolResult, onMessage, onClose };
+
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ uri, server });
 
-    fetch(`${API}/api/mcp/resource?${params}`)
+    // no-store: the View HTML is read from disk on every request, so a
+    // cached response would silently serve a stale UI after an edit.
+    fetch(`${API}/api/mcp/resource?${params}`, { cache: "no-store" })
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json() as Promise<UiResource>;
@@ -116,6 +127,13 @@ export function McpAppFrame({
       // Origin check on every inbound message: only the sandbox may speak
       // to the host.
       if (event.origin !== SANDBOX) return;
+
+      // Source check too. Several Views can be mounted at once — a booking
+      // form and a checkout, say — and every frame receives every message
+      // from the sandbox origin. Without this, one frame answers another's
+      // handshake and posts the reply into the wrong iframe, leaving both
+      // Views waiting on responses that went elsewhere.
+      if (event.source !== frameRef.current?.contentWindow) return;
       const msg = event.data as Rpc;
       if (!msg || msg.jsonrpc !== "2.0") return;
 
@@ -146,8 +164,12 @@ export function McpAppFrame({
                   "--color-text-secondary": "#4a545e",
                   "--color-border-primary": "#dfe3e7",
                   "--border-radius-md": "3px",
+                  // A literal stack, not var(--font-inter): CSS custom
+                  // properties do not cross the iframe document boundary,
+                  // so a variable reference resolves to nothing inside the
+                  // View and it falls back to a serif default.
                   "--font-sans":
-                    "var(--font-inter), system-ui, sans-serif",
+                    "Inter, system-ui, -apple-system, sans-serif",
                 },
               },
             },
@@ -159,13 +181,16 @@ export function McpAppFrame({
           send({
             jsonrpc: "2.0",
             method: "ui/notifications/tool-input",
-            params: { toolName, arguments: toolInput },
+            params: {
+              toolName: latest.current.toolName,
+              arguments: latest.current.toolInput,
+            },
           });
-          if (toolResult) {
+          if (latest.current.toolResult) {
             send({
               jsonrpc: "2.0",
               method: "ui/notifications/tool-result",
-              params: toolResult,
+              params: latest.current.toolResult,
             });
           }
           return;
@@ -179,9 +204,9 @@ export function McpAppFrame({
         case "ui/message": {
           const content = (msg.params as { content?: { text?: string } })
             ?.content;
-          if (content?.text) onMessage?.(content.text);
+          if (content?.text) latest.current.onMessage?.(content.text);
           respond(msg.id, {});
-          onClose?.();
+          latest.current.onClose?.();
           return;
         }
 
@@ -239,7 +264,7 @@ export function McpAppFrame({
 
     window.addEventListener("message", handle);
     return () => window.removeEventListener("message", handle);
-  }, [resource, toolName, toolInput, toolResult, send, respond, fail, onMessage, onClose]);
+  }, [resource, send, respond, fail]);
 
   // Deliver a result that arrives after the View is already up.
   useEffect(() => {
@@ -280,6 +305,17 @@ export function McpAppFrame({
         ref={frameRef}
         src={SANDBOX}
         title={toolName}
+        // The iframe is created only once the resource is in hand. Mounting
+        // it earlier races the proxy's sandbox-proxy-ready announcement
+        // against the fetch: the proxy speaks, nothing is listening yet, and
+        // the View waits forever on a handshake that already happened.
+        onLoad={() => {
+          send({
+            jsonrpc: "2.0",
+            method: "ui/notifications/sandbox-resource-ready",
+            params: { html: resource.html, csp: resource.csp },
+          });
+        }}
         style={{ width: "100%", height, border: 0, display: "block" }}
       />
     </div>

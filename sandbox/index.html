@@ -126,6 +126,25 @@
     }
   });
 
+  // Announce until the host answers with a resource.
+  //
+  // A single announcement races the host's listener: this page can finish
+  // loading and speak before the host component has attached its message
+  // handler, and that announcement is then lost with no way to recover.
+  // Repeating until the resource arrives removes the ordering dependency
+  // entirely — whichever side is ready first, the handshake completes.
+  var announce = setInterval(function () {
+    if (view) {
+      clearInterval(announce);
+      return;
+    }
+    toHost({
+      jsonrpc: "2.0",
+      method: SANDBOX_PREFIX + "proxy-ready",
+      params: {}
+    });
+  }, 150);
+
   toHost({
     jsonrpc: "2.0",
     method: SANDBOX_PREFIX + "proxy-ready",

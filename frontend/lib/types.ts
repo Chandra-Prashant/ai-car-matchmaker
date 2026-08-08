@@ -170,4 +170,13 @@ export type TranscriptEntry =
       listings: Record<string, Listing>;
       weightSource: string;
     }
+  | {
+      id: string;
+      type: "mcpApp";
+      uri: string;
+      server: string;
+      toolName: string;
+      toolInput: Record<string, unknown>;
+      toolResult: Record<string, unknown> | null;
+    }
   | { id: string; type: "error"; text: string };

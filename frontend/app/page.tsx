@@ -141,7 +141,11 @@ export default function Home() {
           )}
 
           {session.transcript.map((entry) => (
-            <TranscriptItem key={entry.id} entry={entry} />
+            <TranscriptItem
+              key={entry.id}
+              entry={entry}
+              onAppMessage={(text) => void submit(text)}
+            />
           ))}
 
           <div ref={endRef} />

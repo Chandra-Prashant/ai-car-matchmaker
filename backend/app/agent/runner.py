@@ -39,6 +39,7 @@ from sqlalchemy.orm import Session
 
 from app.agent import tools as tool_registry
 from app.agent.model_client import ModelClient, RateLimited
+from app.api.mcp_bridge import RESOURCE_OWNERS, SERVERS
 from app.agent.phases import (
     TURN_CAPS,
     advance,
@@ -47,6 +48,7 @@ from app.agent.phases import (
 )
 from app.api.events import (
     AgentEvent,
+    ui_frame,
     done_event,
     error_event,
     message,
@@ -101,8 +103,11 @@ PHASE_GUIDANCE = {
     ),
     Phase.BOOK: (
         "The user has chosen. Open the booking form with everything already "
-        "known so they are not retyping it, then the checkout. Both render "
-        "inside the conversation. State plainly that payment is simulated."
+        "known so they are not retyping it — then STOP and wait. Do not open "
+        "checkout in the same turn: there is no booking to pay for until the "
+        "user has submitted the form, and the form will tell you its "
+        "reference when they do. When it does, record it with record_booking, "
+        "then open checkout. State plainly that payment is simulated."
     ),
     Phase.COMPLETE: "The booking is confirmed. Summarise and offer further help.",
 }
@@ -136,6 +141,12 @@ def _system_prompt(state: SessionState, model_name: str) -> str:
         "tells them nothing.",
         "- If a tool refuses, read why and act on it — usually by asking the "
         "user for what is missing.",
+        "- Never tell the user you have opened, searched, booked or recorded "
+        "something unless a tool call in THIS turn returned successfully "
+        "saying so. Being in a later phase does not mean the work was done — "
+        "it may have happened in an earlier conversation the user cannot "
+        "see. If you are unsure whether something is already open, do it "
+        "rather than claim it.",
         "",
         f"CURRENT PHASE: {state.phase.value}",
         PHASE_GUIDANCE[state.phase],
@@ -244,6 +255,55 @@ def _auto_advance(state: SessionState) -> tuple[str, Phase] | None:
 
     decision = advance(state, target)
     return (decision.message, target) if decision.allowed else None
+
+
+#: Tools whose result is a user interface rather than data. They need the
+#: async MCP client, so the runner handles them instead of the synchronous
+#: tool registry.
+UI_TOOLS = {
+    "open_booking_form": ("booking-form", "ui://booking/form"),
+    "open_checkout": ("checkout", "ui://checkout/payment"),
+}
+
+
+async def _call_ui_tool(
+    name: str, arguments: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Invoke an MCP App tool and shape the frame the client will render.
+
+    Returns (tool result for the model, ui frame for the client). The model
+    sees the summary so it can talk about what just opened; the client gets
+    what it needs to mount a sandboxed View.
+    """
+    from mcp.client import Client
+
+    server_name, uri = UI_TOOLS[name]
+    server = SERVERS[server_name]
+
+    async with Client(server) as client:
+        result = await client.call_tool(name, arguments)
+
+    structured = (
+        getattr(result, "structured_content", None)
+        or getattr(result, "structuredContent", None)
+        or {}
+    )
+    summary = str(structured.get("summary", "")) or "Opened."
+
+    frame = {
+        "uri": uri,
+        "server": server_name,
+        "toolName": name,
+        "toolInput": arguments,
+        "toolResult": {"structuredContent": structured},
+    }
+
+    # An error result means no View should be shown — the frame is dropped
+    # and the model gets the reason instead.
+    if structured.get("error"):
+        return {"summary": summary, "error": structured["error"]}, {}
+
+    return {"summary": summary, "opened": True}, frame
 
 
 def _echo_tool_call(call: Any) -> dict[str, Any]:
@@ -356,7 +416,14 @@ class ModelRunner:
 
                 yield tool_started(name, arguments)
 
-                result = tool_registry.call(self._session, state, name, arguments)
+                if name in UI_TOOLS:
+                    result, frame = await _call_ui_tool(name, arguments)
+                    if frame:
+                        yield ui_frame(frame, surface="inline")
+                else:
+                    result = tool_registry.call(
+                        self._session, state, name, arguments
+                    )
                 summary = str(result.get("summary", ""))
                 tool_records.append(
                     ToolCallRecord(tool=name, arguments=arguments, summary=summary)
