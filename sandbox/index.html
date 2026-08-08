@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MCP App Sandbox</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: transparent; }
+  iframe { display: block; width: 100%; height: 100%; border: 0; }
+</style>
+</head>
+<body>
+<script>
+/**
+ * MCP Apps sandbox proxy.
+ *
+ * The specification requires web hosts to wrap a View in an intermediate
+ * proxy on a DIFFERENT ORIGIN from the host page. That origin separation is
+ * the containment boundary — not the iframe sandbox attribute, which must
+ * actually carry both allow-scripts and allow-same-origin for the View to
+ * function.
+ *
+ * This page is deliberately dependency-free and deliberately dumb. It does
+ * three things:
+ *
+ *   1. Announces itself with ui/notifications/sandbox-proxy-ready
+ *   2. Receives HTML and a host-constructed CSP via
+ *      ui/notifications/sandbox-resource-ready, and renders the View
+ *   3. Forwards every other message in both directions, unmodified
+ *
+ * It never originates protocol requests of its own, and it never forwards
+ * anything prefixed ui/notifications/sandbox- , which is addressed to it
+ * rather than through it.
+ */
+(function () {
+  "use strict";
+
+  var SANDBOX_PREFIX = "ui/notifications/sandbox-";
+  var host = window.parent;
+  var view = null;
+  var hostOrigin = null;
+
+  function toHost(message) {
+    host.postMessage(message, hostOrigin || "*");
+  }
+
+  /**
+   * Build the CSP the View runs under.
+   *
+   * Defaults are deny-everything; only what the resource declared and the
+   * host approved gets added. 'unsafe-inline' is required because the View
+   * is delivered as a single self-contained document — the spec's own model
+   * for MCP App resources.
+   */
+  function buildCsp(csp) {
+    csp = csp || {};
+    var connect = (csp.connectDomains || []).join(" ");
+    var resource = (csp.resourceDomains || []).join(" ");
+    var frame = (csp.frameDomains || []).join(" ");
+    var base = (csp.baseUriDomains || []).join(" ");
+
+    return [
+      "default-src 'none'",
+      "script-src 'unsafe-inline' 'unsafe-eval'" + (resource ? " " + resource : ""),
+      "style-src 'unsafe-inline'" + (resource ? " " + resource : ""),
+      "img-src data: blob:" + (resource ? " " + resource : ""),
+      "font-src data:" + (resource ? " " + resource : ""),
+      "connect-src " + (connect || "'none'"),
+      "frame-src " + (frame || "'none'"),
+      "base-uri " + (base || "'none'"),
+      "form-action 'none'"
+    ].join("; ");
+  }
+
+  function render(payload) {
+    var doc = payload.html || "";
+    var meta = '<meta http-equiv="Content-Security-Policy" content="' +
+               buildCsp(payload.csp).replace(/"/g, "&quot;") + '">';
+
+    // Inject the policy as early as possible so it governs everything the
+    // document loads.
+    if (/<head[^>]*>/i.test(doc)) {
+      doc = doc.replace(/<head[^>]*>/i, function (m) { return m + meta; });
+    } else {
+      doc = meta + doc;
+    }
+
+    if (view) view.remove();
+    view = document.createElement("iframe");
+    // Both flags are mandated by the spec. Safe here only because this page
+    // is on an origin distinct from the host.
+    view.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+    if (payload.permissions) {
+      view.setAttribute("allow", payload.permissions);
+    }
+    view.srcdoc = doc;
+    document.body.appendChild(view);
+  }
+
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || data.jsonrpc !== "2.0") return;
+
+    var fromHost = event.source === host;
+    var fromView = view && event.source === view.contentWindow;
+
+    if (fromHost) {
+      if (hostOrigin === null) hostOrigin = event.origin;
+
+      if (data.method === SANDBOX_PREFIX + "resource-ready") {
+        render(data.params || {});
+        return;
+      }
+      // Everything else is for the View.
+      if (view && view.contentWindow) {
+        view.contentWindow.postMessage(data, "*");
+      }
+      return;
+    }
+
+    if (fromView) {
+      // Messages addressed to the sandbox are not passed upward.
+      if (typeof data.method === "string" && data.method.indexOf(SANDBOX_PREFIX) === 0) {
+        return;
+      }
+      toHost(data);
+    }
+  });
+
+  toHost({
+    jsonrpc: "2.0",
+    method: SANDBOX_PREFIX + "proxy-ready",
+    params: {}
+  });
+})();
+</script>
+</body>
+</html>
