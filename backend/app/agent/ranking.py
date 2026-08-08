@@ -141,14 +141,33 @@ def _price_of(listing: ListingRead, mode: Mode | None) -> int | None:
     return listing.price_inr or listing.rent_per_day_inr
 
 
+#: Slope of the budget score. A car at the ceiling scores 1 - BUDGET_SLOPE;
+#: at zero cost it would score 1. Chosen so that only listings genuinely
+#: straining the budget fall below TRADEOFF_THRESHOLD — spending 55% of the
+#: stated budget is not a compromise and must not be reported as one.
+BUDGET_SLOPE = 0.75
+
+
 def _score_budget(listing: ListingRead, c: ConstraintSet) -> tuple[float, str]:
     price = _price_of(listing, c.mode)
     if price is None or not c.budget_max:
         return 0.5, "no budget stated"
+
     ratio = price / c.budget_max
-    score = max(0.0, min(1.0, 1.0 - ratio))
+    score = max(0.0, min(1.0, 1.0 - BUDGET_SLOPE * ratio))
     pct = round(ratio * 100)
-    return score, f"uses {pct}% of budget"
+
+    # Phrasing tracks the direction of the score, so a high score never
+    # reads as a downside and a low one never reads as a bargain.
+    if ratio >= 0.92:
+        note = f"at the top of your budget ({pct}%)"
+    elif ratio >= 0.75:
+        note = f"uses most of your budget ({pct}%)"
+    elif ratio >= 0.45:
+        note = f"comfortably within budget ({pct}%)"
+    else:
+        note = f"well under budget ({pct}%)"
+    return score, note
 
 
 def _score_recency(listing: ListingRead, _c: ConstraintSet) -> tuple[float, str]:
