@@ -7,11 +7,17 @@ over stdio and are not mounted here — see app/mcp_servers/.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
+import dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.sessions import router as session_router
+
+# Loaded here so uvicorn picks up the model provider key without the
+# caller having to export it.
+dotenv.load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 app = FastAPI(
     title="AI Car Matchmaker",

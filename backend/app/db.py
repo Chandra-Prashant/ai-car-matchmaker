@@ -19,14 +19,29 @@ from app.models.registry import Base  # registers every table
 _DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "seed" / "marketplace.db"
 
 
+#: Repository root — the anchor for relative DATABASE_PATH values.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 def database_path() -> Path:
     """Resolve the database location.
 
     Environment variable wins so Docker can point elsewhere without code
     changes; otherwise fall back to the repository's seed directory.
+
+    A relative DATABASE_PATH resolves against the repository root, not the
+    working directory. Otherwise the same .env would point somewhere
+    different depending on whether the process started in backend/ or at the
+    root — which is exactly the bug this replaced.
     """
     env = os.getenv("DATABASE_PATH")
-    return Path(env).expanduser().resolve() if env else _DEFAULT_DB_PATH
+    if not env:
+        return _DEFAULT_DB_PATH
+
+    candidate = Path(env).expanduser()
+    if not candidate.is_absolute():
+        candidate = _REPO_ROOT / candidate
+    return candidate.resolve()
 
 
 _engine: Engine | None = None

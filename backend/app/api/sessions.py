@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agent.phases import phase_status
+from app.agent.runner import ModelRunner
 from app.agent.scripted import SCRIPTS, ScriptedRunner
 from app.api.events import stream_sse
 from app.db import get_session
@@ -41,9 +42,10 @@ class SessionSummary(BaseModel):
 
 class TurnRequest(BaseModel):
     message: str
-    #: Which scripted journey to run. Removed once the model-backed
-    #: runner lands; until then it is how the demo scenarios are driven.
-    script: str = "rental"
+    #: Omit for the real agent. Naming a script runs that fixed journey
+    #: instead — used by the eval harness and as a demo fallback if the
+    #: model provider throttles.
+    script: str | None = None
 
 
 def _summarise(state: SessionState) -> SessionSummary:
@@ -154,14 +156,16 @@ def take_turn(
     if state is None:
         raise HTTPException(status_code=404, detail="No such session")
 
-    steps = SCRIPTS.get(body.script)
-    if steps is None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown script. Available: {sorted(SCRIPTS)}",
-        )
-
-    runner = ScriptedRunner(db, steps)
+    if body.script:
+        steps = SCRIPTS.get(body.script)
+        if steps is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown script. Available: {sorted(SCRIPTS)}",
+            )
+        runner = ScriptedRunner(db, steps)
+    else:
+        runner = ModelRunner(db)
 
     async def events():
         async for frame in stream_sse(runner.run_turn(state, body.message)):

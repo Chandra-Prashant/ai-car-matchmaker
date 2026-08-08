@@ -1,0 +1,386 @@
+"""Model-backed agent runner.
+
+Serves T022. Implements the `AgentRunner` protocol, so it is a drop-in
+replacement for `ScriptedRunner` — nothing downstream of the event stream
+changes.
+
+HOW ORCHESTRATION IS ENFORCED
+-----------------------------
+The model decides *what to do next*. It does not decide what it is allowed
+to do. Three mechanisms, in order of strength:
+
+1. Only the current phase's tools are advertised. The model cannot search
+   during the interview because search is not in the list it receives.
+2. `tools.call()` refuses anything out of phase even if the model asks for
+   it anyway.
+3. Phase transitions are authorised by `phases.py` against state, never by
+   the model's assertion that it is ready.
+
+When a call is refused, the refusal is returned as the tool result. The
+model reads "still missing: budget_max" and asks the user for it. Refusal is
+a correction, not a dead end.
+
+THE PROMPT IS REBUILT EACH TURN
+-------------------------------
+The system prompt is generated from live state — current phase, known
+constraints, what is missing, the exact tool list. A model that can see the
+state does not have to remember it, which matters much more on small,
+fast models than on frontier ones.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import AsyncIterator
+from datetime import date
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from app.agent import tools as tool_registry
+from app.agent.model_client import ModelClient, RateLimited
+from app.agent.phases import (
+    TURN_CAPS,
+    advance,
+    available_tools,
+    turn_cap_reached,
+)
+from app.api.events import (
+    AgentEvent,
+    done_event,
+    error_event,
+    message,
+    phase_event,
+    progress,
+    state_event,
+    tool_finished,
+    tool_started,
+)
+from app.inventory import taxonomy
+from app.state.models import Phase, SessionState, ToolCallRecord
+
+MAX_HISTORY_TURNS = 12
+
+PHASE_GUIDANCE = {
+    Phase.INTERVIEW: (
+        "You are gathering requirements. Ask about ONE missing thing at a "
+        "time, conversationally — never present a list of questions. Record "
+        "everything the user tells you with update_slots as soon as they say "
+        "it, including things they volunteer out of order. Do not search: "
+        "you have no search tool yet, and you will get it once the required "
+        "details are known. The moment nothing is listed as STILL REQUIRED, "
+        "call advance_phase to move to research in that same turn — do not "
+        "ask about optional details like city, fuel or brand first. You can "
+        "refine after showing real options, and seeing results is more "
+        "useful to the user than another question."
+    ),
+    Phase.RESEARCH: (
+        "You have what you need. Search, then narrow the results to at most "
+        "ten candidates with set_shortlist, then call advance_phase to reach "
+        "recommend. Do NOT describe the listings yourself while still in "
+        "research — an unranked list has no reasoning attached to it, and "
+        "every recommendation you show must be explained. If nothing "
+        "matches, the result tells you which constraint is binding — relay "
+        "that with the specific relaxation suggested, and do not silently "
+        "widen the search yourself."
+    ),
+    Phase.RECOMMEND: (
+        "Rank the shortlist. Pass `emphasis` to rank_shortlist reflecting how "
+        "the user described their priorities — if they stressed price, raise "
+        "budget; if they were relaxed about age, lower recency. Present the "
+        "top few with the reasoning attached to each, including what each one "
+        "compromises on. If the user is undecided between buying and renting, "
+        "use compute_tco."
+    ),
+    Phase.BOOK: (
+        "The user has chosen. Open the booking form with everything already "
+        "known so they are not retyping it, then the checkout. Both render "
+        "inside the conversation. State plainly that payment is simulated."
+    ),
+    Phase.COMPLETE: "The booking is confirmed. Summarise and offer further help.",
+}
+
+
+def _system_prompt(state: SessionState, model_name: str) -> str:
+    known = state.constraints.filled()
+    missing = state.constraints.missing_required()
+    conflicts = [c.description for c in state.open_conflicts]
+
+    today = date.today()
+    lines = [
+        "You are a car matchmaking assistant. You help people find a car to "
+        "buy or rent by interviewing them, searching real inventory, and "
+        "explaining your recommendations.",
+        "",
+        f"TODAY IS {today.isoformat()} ({today.strftime('%A %d %B %Y')}). "
+        "Resolve every relative date the user gives — 'next month', 'the "
+        "12th', 'in two weeks' — against this date, and always pass dates as "
+        "YYYY-MM-DD. Never assume a different year.",
+        "",
+        "RULES",
+        "- Never invent a listing, a price, or availability. Everything comes "
+        "from tool results.",
+        "- Call tools as soon as you learn something. Do not batch updates "
+        "until the end of a conversation.",
+        "- Keep replies short and natural. One question at a time.",
+        "- Do not narrate what you are about to do. Chain the tool calls you "
+        "need and speak once at the end, when you have something for the "
+        "user. Saying 'let me search now' before searching wastes a step and "
+        "tells them nothing.",
+        "- If a tool refuses, read why and act on it — usually by asking the "
+        "user for what is missing.",
+        "",
+        f"CURRENT PHASE: {state.phase.value}",
+        PHASE_GUIDANCE[state.phase],
+        "",
+        f"KNOWN SO FAR: {json.dumps(known, default=str) if known else 'nothing yet'}",
+        f"STILL REQUIRED: {', '.join(missing) if missing else 'nothing — you may advance'}",
+    ]
+
+    if conflicts:
+        lines += ["", "UNRESOLVED CONFLICTS: " + "; ".join(conflicts)]
+
+    if state.shortlist:
+        lines.append(f"SHORTLIST: {len(state.shortlist)} listings")
+
+    # Naming the vocabulary prevents the model guessing at category strings —
+    # it will happily emit "MPV" or "SUV" when the catalogue expects "mpv".
+    lines += [
+        "",
+        "VALID CATEGORIES (use these exact strings): "
+        + ", ".join(sorted(taxonomy.CATALOGUE))
+        + ". Never read this list to the user — suggest the two or three "
+        "that suit what they have described and let them choose.",
+        "",
+        f"TOOLS AVAILABLE NOW: {', '.join(available_tools(state))}. "
+        "Tools from other phases are not callable yet.",
+    ]
+    return "\n".join(lines)
+
+
+def _tool_schemas(state: SessionState) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": spec.name,
+                "description": spec.description,
+                "parameters": spec.schema,
+            },
+        }
+        for spec in tool_registry.tools_for(state)
+    ]
+
+
+def _history(state: SessionState) -> list[dict[str, str]]:
+    """Recent conversation only.
+
+    The full transcript is preserved in state for replay; sending all of it
+    every turn would waste tokens without improving behaviour, since the
+    system prompt already carries the accumulated facts.
+    """
+    recent = state.history[-MAX_HISTORY_TURNS:]
+    return [
+        {"role": "assistant" if t.role == "assistant" else "user", "content": t.content}
+        for t in recent
+        if t.content and not t.content.startswith("(")
+    ]
+
+
+def _normalise(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Repair the argument shapes models commonly get slightly wrong."""
+    fixed = dict(arguments)
+
+    # Models emit "MPV" or "Compact SUV" where the catalogue expects "mpv".
+    category = fixed.get("category")
+    if isinstance(category, str):
+        candidate = category.strip().lower().replace(" ", "_").replace("-", "_")
+        if candidate in taxonomy.CATALOGUE:
+            fixed["category"] = candidate
+        else:
+            match = next(
+                (c for c in taxonomy.CATALOGUE if c.replace("_", "") == candidate.replace("_", "")),
+                None,
+            )
+            if match:
+                fixed["category"] = match
+
+    for key in ("mode", "transmission"):
+        if isinstance(fixed.get(key), str):
+            fixed[key] = fixed[key].strip().lower()
+
+    if isinstance(fixed.get("fuel"), str):
+        fixed["fuel"] = [fixed["fuel"].strip().lower()]
+    elif isinstance(fixed.get("fuel"), list):
+        fixed["fuel"] = [str(f).strip().lower() for f in fixed["fuel"]]
+
+    if isinstance(fixed.get("brand_affinity"), str):
+        fixed["brand_affinity"] = [fixed["brand_affinity"]]
+
+    return fixed
+
+
+def _auto_advance(state: SessionState) -> tuple[str, Phase] | None:
+    """Advance if the guard permits, without asking the model.
+
+    Only ever moves forward one step, and only when `phases.advance` agrees.
+    Every constraint in phases.py still applies — this changes who proposes
+    the transition, not who authorises it.
+    """
+    nexts = {
+        Phase.INTERVIEW: Phase.RESEARCH,
+        Phase.RESEARCH: Phase.RECOMMEND,
+    }
+    target = nexts.get(state.phase)
+    if target is None:
+        return None
+
+    decision = advance(state, target)
+    return (decision.message, target) if decision.allowed else None
+
+
+class ModelRunner:
+    """Drives the conversation with a real model."""
+
+    def __init__(self, session: Session, client: ModelClient | None = None) -> None:
+        self._session = session
+        self._client = client or ModelClient()
+
+    async def run_turn(
+        self, state: SessionState, user_message: str
+    ) -> AsyncIterator[AgentEvent]:
+        state.record_turn("user", user_message)
+        yield state_event(state)
+
+        if turn_cap_reached(state):
+            yield message(
+                "We seem to be going in circles on this step. Could you tell "
+                "me directly what you'd like to do next?"
+            )
+            yield done_event(state)
+            return
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": _system_prompt(state, self._client.describe())},
+            *_history(state),
+        ]
+
+        tool_records: list[ToolCallRecord] = []
+
+        for round_index in range(self._client.config.max_rounds):
+            # Regenerated each round: a tool may have changed phase, which
+            # changes both the guidance and the callable tool set.
+            messages[0] = {
+                "role": "system",
+                "content": _system_prompt(state, self._client.describe()),
+            }
+
+            try:
+                reply = await self._client.complete(messages, _tool_schemas(state))
+            except RateLimited as exc:
+                yield error_event(str(exc), recoverable=True)
+                yield done_event(state)
+                return
+            except Exception as exc:  # noqa: BLE001 - surfaced to the user
+                yield error_event(
+                    f"The model call failed: {exc}", recoverable=True
+                )
+                yield done_event(state)
+                return
+
+            text = (reply.content or "").strip()
+            calls = getattr(reply, "tool_calls", None) or []
+
+            if text:
+                yield message(text)
+
+            if not calls:
+                if text:
+                    state.record_turn("assistant", text, tool_records)
+                yield done_event(state)
+                return
+
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": reply.content,
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.function.name,
+                                "arguments": call.function.arguments,
+                            },
+                        }
+                        for call in calls
+                    ],
+                }
+            )
+
+            for call in calls:
+                name = call.function.name
+                try:
+                    raw = json.loads(call.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    raw = {}
+                arguments = _normalise(name, raw)
+
+                yield tool_started(name, arguments)
+
+                result = tool_registry.call(self._session, state, name, arguments)
+                summary = str(result.get("summary", ""))
+                tool_records.append(
+                    ToolCallRecord(tool=name, arguments=arguments, summary=summary)
+                )
+
+                yield tool_finished(name, summary, result)
+
+                if name == "advance_phase":
+                    yield phase_event(
+                        phase=state.phase.value,
+                        allowed=bool(result.get("allowed")),
+                        message=summary,
+                        missing=list(result.get("missing", [])),
+                    )
+                if name == "search_listings" and not result.get("empty"):
+                    yield progress(
+                        "Narrowing candidates",
+                        remaining=int(result.get("total_matched", 0)),
+                    )
+
+                yield state_event(state)
+
+                # Auto-advance when the guard already permits it. The state
+                # machine knows the interview is complete; spending a model
+                # round asking it to notice wastes quota and it sometimes
+                # keeps interviewing anyway. The guard still authorises the
+                # move — this only removes the need for the model to
+                # propose it.
+                if name in ("update_slots", "set_shortlist", "rank_shortlist"):
+                    auto = _auto_advance(state)
+                    if auto is not None:
+                        decision, target = auto
+                        yield phase_event(
+                            phase=state.phase.value,
+                            allowed=True,
+                            message=decision,
+                        )
+                        yield state_event(state)
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": json.dumps(result, default=str)[:6000],
+                    }
+                )
+
+        # Rounds exhausted. Ending cleanly beats looping until the quota is
+        # spent, and the user gets a turn back rather than silence.
+        yield message(
+            "I've done as much as I can in one go — tell me how you'd like "
+            "to proceed."
+        )
+        state.record_turn("assistant", "(round limit reached)", tool_records)
+        yield done_event(state)
