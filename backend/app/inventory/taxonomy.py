@@ -7,6 +7,12 @@ Versioned deliberately as data, not as inline constants in the generator, so
 that the taxonomy can change without touching generation logic and so that
 diffs to the catalogue are legible in review.
 
+MODEL ORDERING
+--------------
+Within each brand, models are listed entry-level first and flagship last. The
+generator reads this ordering as a pricing signal, so the order is meaningful
+and should be preserved when editing.
+
 CURRENCY NOTE
 -------------
 INR is the canonical price. EUR is derived at a single declared rate below.
@@ -19,7 +25,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-TAXONOMY_VERSION = "1.0.0"
+TAXONOMY_VERSION = "1.1.0"
 
 # 1 EUR expressed in INR. Declared, not fetched — determinism (FR-027)
 # matters more here than accuracy.
@@ -47,7 +53,7 @@ class CategoryProfile(TypedDict):
 
 CATEGORY_PROFILES: dict[str, CategoryProfile] = {
     "hatchback": {
-        "price_band_inr": (450_000, 1_100_000),
+        "price_band_inr": (600_000, 1_300_000),
         "rent_band_inr": (1_200, 2_600),
         "seats": (4, 5),
         "fuels": ("petrol", "diesel", "cng"),
@@ -55,7 +61,7 @@ CATEGORY_PROFILES: dict[str, CategoryProfile] = {
         "rentable": True,
     },
     "sedan": {
-        "price_band_inr": (800_000, 2_200_000),
+        "price_band_inr": (850_000, 2_000_000),
         "rent_band_inr": (1_800, 4_000),
         "seats": (5,),
         "fuels": ("petrol", "diesel", "hybrid", "cng"),
@@ -63,7 +69,7 @@ CATEGORY_PROFILES: dict[str, CategoryProfile] = {
         "rentable": True,
     },
     "compact_suv": {
-        "price_band_inr": (900_000, 2_000_000),
+        "price_band_inr": (900_000, 2_200_000),
         "rent_band_inr": (2_000, 4_500),
         "seats": (5,),
         "fuels": ("petrol", "diesel", "hybrid"),
@@ -71,7 +77,7 @@ CATEGORY_PROFILES: dict[str, CategoryProfile] = {
         "rentable": True,
     },
     "full_size_suv": {
-        "price_band_inr": (1_600_000, 4_500_000),
+        "price_band_inr": (1_800_000, 4_500_000),
         "rent_band_inr": (3_500, 8_000),
         "seats": (5, 7),
         "fuels": ("diesel", "petrol", "hybrid"),
@@ -79,7 +85,7 @@ CATEGORY_PROFILES: dict[str, CategoryProfile] = {
         "rentable": True,
     },
     "mpv": {
-        "price_band_inr": (900_000, 2_800_000),
+        "price_band_inr": (950_000, 2_800_000),
         "rent_band_inr": (2_400, 5_500),
         "seats": (6, 7, 8),
         "fuels": ("petrol", "diesel", "hybrid", "cng"),
@@ -87,7 +93,7 @@ CATEGORY_PROFILES: dict[str, CategoryProfile] = {
         "rentable": True,
     },
     "luxury_sedan": {
-        "price_band_inr": (4_500_000, 15_000_000),
+        "price_band_inr": (3_500_000, 12_000_000),
         "rent_band_inr": (9_000, 25_000),
         "seats": (4, 5),
         "fuels": ("petrol", "diesel", "hybrid", "electric"),
@@ -95,7 +101,7 @@ CATEGORY_PROFILES: dict[str, CategoryProfile] = {
         "rentable": True,
     },
     "luxury_suv": {
-        "price_band_inr": (6_000_000, 22_000_000),
+        "price_band_inr": (4_000_000, 15_000_000),
         "rent_band_inr": (12_000, 35_000),
         "seats": (5, 7),
         "fuels": ("petrol", "diesel", "hybrid", "electric"),
@@ -103,7 +109,7 @@ CATEGORY_PROFILES: dict[str, CategoryProfile] = {
         "rentable": True,
     },
     "electric": {
-        "price_band_inr": (1_000_000, 7_000_000),
+        "price_band_inr": (1_200_000, 6_000_000),
         "rent_band_inr": (2_500, 9_000),
         "seats": (4, 5, 7),
         "fuels": ("electric",),
@@ -145,15 +151,16 @@ CATEGORY_PROFILES: dict[str, CategoryProfile] = {
 }
 
 
-# Ten brands per category, each with representative models.
-# Model names are illustrative of the segment; this is mock inventory.
+# Ten brands per category, each with representative models ordered
+# entry-level first. Model names are illustrative of the segment; this is
+# mock inventory.
 CATALOGUE: dict[str, dict[str, tuple[str, ...]]] = {
     "hatchback": {
-        "Maruti Suzuki": ("Swift", "Baleno", "Ignis"),
-        "Hyundai": ("i20", "Grand i10 Nios"),
-        "Tata": ("Altroz", "Tiago"),
+        "Maruti Suzuki": ("Ignis", "Swift", "Baleno"),
+        "Hyundai": ("Grand i10 Nios", "i20"),
+        "Tata": ("Tiago", "Altroz"),
         "Toyota": ("Glanza", "Yaris"),
-        "Honda": ("Jazz", "Brio"),
+        "Honda": ("Brio", "Jazz"),
         "Volkswagen": ("Polo", "Golf"),
         "Renault": ("Kwid", "Clio"),
         "Citroen": ("C3", "C4 Cactus"),
@@ -161,51 +168,51 @@ CATALOGUE: dict[str, dict[str, tuple[str, ...]]] = {
         "MG": ("Comet", "3"),
     },
     "sedan": {
-        "Honda": ("City", "Amaze"),
+        "Honda": ("Amaze", "City"),
         "Hyundai": ("Verna", "Elantra"),
-        "Maruti Suzuki": ("Ciaz", "Dzire"),
+        "Maruti Suzuki": ("Dzire", "Ciaz"),
         "Skoda": ("Slavia", "Octavia"),
         "Volkswagen": ("Virtus", "Passat"),
-        "Toyota": ("Camry", "Corolla Altis"),
+        "Toyota": ("Corolla Altis", "Camry"),
         "Tata": ("Tigor",),
         "Nissan": ("Sunny", "Altima"),
-        "Kia": ("K5", "Forte"),
+        "Kia": ("Forte", "K5"),
         "MG": ("5",),
     },
     "compact_suv": {
-        "Tata": ("Nexon", "Punch"),
-        "Hyundai": ("Creta", "Venue"),
-        "Kia": ("Seltos", "Sonet"),
+        "Tata": ("Punch", "Nexon"),
+        "Hyundai": ("Venue", "Creta"),
+        "Kia": ("Sonet", "Seltos"),
         "Maruti Suzuki": ("Brezza", "Grand Vitara"),
-        "Mahindra": ("XUV300", "Bolero Neo"),
+        "Mahindra": ("Bolero Neo", "XUV300"),
         "Toyota": ("Urban Cruiser", "Corolla Cross"),
-        "Honda": ("Elevate", "WR-V"),
+        "Honda": ("WR-V", "Elevate"),
         "Nissan": ("Magnite", "Kicks"),
         "Renault": ("Kiger", "Captur"),
         "Volkswagen": ("Taigun", "T-Cross"),
     },
     "full_size_suv": {
-        "Mahindra": ("XUV700", "Scorpio N"),
+        "Mahindra": ("Scorpio N", "XUV700"),
         "Toyota": ("Fortuner", "Land Cruiser Prado"),
-        "MG": ("Gloster", "Hector Plus"),
+        "MG": ("Hector Plus", "Gloster"),
         "Jeep": ("Meridian", "Grand Cherokee"),
         "Ford": ("Endeavour", "Explorer"),
         "Isuzu": ("MU-X",),
         "Hyundai": ("Tucson", "Santa Fe"),
-        "Kia": ("Carnival", "Sorento"),
+        "Kia": ("Sorento", "Carnival"),
         "Skoda": ("Kodiaq",),
         "Volkswagen": ("Tiguan", "Touareg"),
     },
     "mpv": {
         "Maruti Suzuki": ("Ertiga", "XL6", "Invicto"),
-        "Toyota": ("Innova Crysta", "Innova Hycross", "Rumion"),
+        "Toyota": ("Rumion", "Innova Crysta", "Innova Hycross"),
         "Kia": ("Carens",),
         "Renault": ("Triber", "Espace"),
         "Mahindra": ("Marazzo",),
         "Nissan": ("Serena",),
         "Honda": ("Freed", "Odyssey"),
         "Hyundai": ("Stargazer", "Custo"),
-        "Citroen": ("C8", "Berlingo"),
+        "Citroen": ("Berlingo", "C8"),
         "MG": ("M9",),
     },
     "luxury_sedan": {
@@ -213,7 +220,7 @@ CATALOGUE: dict[str, dict[str, tuple[str, ...]]] = {
         "Mercedes-Benz": ("C-Class", "E-Class", "S-Class"),
         "Audi": ("A4", "A6", "A8 L"),
         "Volvo": ("S60", "S90"),
-        "Jaguar": ("XF", "XE"),
+        "Jaguar": ("XE", "XF"),
         "Lexus": ("ES", "LS"),
         "Porsche": ("Panamera", "Taycan"),
         "Genesis": ("G70", "G80"),
@@ -233,34 +240,34 @@ CATALOGUE: dict[str, dict[str, tuple[str, ...]]] = {
         "Bentley": ("Bentayga",),
     },
     "electric": {
-        "Tata": ("Nexon EV", "Tiago EV", "Curvv EV"),
-        "MG": ("ZS EV", "Windsor EV", "Comet EV"),
-        "Hyundai": ("Ioniq 5", "Kona Electric"),
+        "Tata": ("Tiago EV", "Nexon EV", "Curvv EV"),
+        "MG": ("Comet EV", "Windsor EV", "ZS EV"),
+        "Hyundai": ("Kona Electric", "Ioniq 5"),
         "Kia": ("EV6", "EV9"),
-        "BYD": ("Atto 3", "Seal", "e6"),
+        "BYD": ("e6", "Atto 3", "Seal"),
         "Tesla": ("Model 3", "Model Y"),
-        "BMW": ("i4", "iX1", "iX"),
+        "BMW": ("iX1", "i4", "iX"),
         "Mercedes-Benz": ("EQB", "EQE", "EQS"),
         "Volvo": ("EX40", "EX90"),
         "Mahindra": ("XUV400 EV", "BE 6"),
     },
     "coupe": {
-        "BMW": ("4 Series", "8 Series", "M4"),
+        "BMW": ("4 Series", "M4", "8 Series"),
         "Mercedes-Benz": ("CLE", "AMG GT"),
         "Audi": ("A5", "RS5"),
         "Porsche": ("718 Cayman", "911 Carrera"),
         "Ford": ("Mustang",),
         "Chevrolet": ("Camaro", "Corvette"),
         "Nissan": ("Z", "GT-R"),
-        "Toyota": ("GR Supra", "GR86"),
+        "Toyota": ("GR86", "GR Supra"),
         "Lexus": ("RC", "LC"),
         "Jaguar": ("F-Type",),
     },
     "convertible": {
-        "BMW": ("4 Series Convertible", "Z4"),
+        "BMW": ("Z4", "4 Series Convertible"),
         "Mercedes-Benz": ("C-Class Cabriolet", "SL"),
-        "Audi": ("A5 Cabriolet", "TT Roadster"),
-        "Porsche": ("911 Cabriolet", "718 Boxster"),
+        "Audi": ("TT Roadster", "A5 Cabriolet"),
+        "Porsche": ("718 Boxster", "911 Cabriolet"),
         "Mini": ("Cooper Convertible",),
         "Mazda": ("MX-5",),
         "Jaguar": ("F-Type Convertible",),
@@ -273,7 +280,7 @@ CATALOGUE: dict[str, dict[str, tuple[str, ...]]] = {
         "Isuzu": ("D-Max V-Cross",),
         "Ford": ("Ranger", "F-150"),
         "Nissan": ("Navara",),
-        "Mahindra": ("Scorpio Getaway", "Bolero Pik-Up"),
+        "Mahindra": ("Bolero Pik-Up", "Scorpio Getaway"),
         "Volkswagen": ("Amarok",),
         "Mitsubishi": ("L200 Triton",),
         "RAM": ("1500",),
@@ -288,9 +295,9 @@ CATALOGUE: dict[str, dict[str, tuple[str, ...]]] = {
         "Volkswagen": ("Transporter", "ID. Buzz"),
         "Ford": ("Transit", "Tourneo"),
         "Renault": ("Trafic", "Master"),
-        "Citroen": ("SpaceTourer", "Jumpy"),
-        "Peugeot": ("Traveller", "Expert"),
-        "Fiat": ("Ducato", "Scudo"),
+        "Citroen": ("Jumpy", "SpaceTourer"),
+        "Peugeot": ("Expert", "Traveller"),
+        "Fiat": ("Scudo", "Ducato"),
     },
 }
 
