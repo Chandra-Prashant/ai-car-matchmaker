@@ -133,7 +133,9 @@ export function McpAppFrame({
       // from the sandbox origin. Without this, one frame answers another's
       // handshake and posts the reply into the wrong iframe, leaving both
       // Views waiting on responses that went elsewhere.
-      if (event.source !== frameRef.current?.contentWindow) return;
+      if (event.source !== frameRef.current?.contentWindow) {
+        return;
+      }
       const msg = event.data as Rpc;
       if (!msg || msg.jsonrpc !== "2.0") return;
 

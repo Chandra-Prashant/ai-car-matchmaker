@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.agent import tools
+from app.agent.runner import UI_TOOLS, _call_ui_tool
 from app.api.events import (
     AgentEvent,
     done_event,
@@ -37,6 +38,7 @@ from app.api.events import (
     progress,
     state_event,
     tool_finished,
+    ui_frame,
     tool_started,
 )
 from app.state.models import SessionState
@@ -95,7 +97,12 @@ class ScriptedRunner:
             if self._delay:
                 await asyncio.sleep(self._delay)
 
-            result = tools.call(self._session, state, step.tool, arguments)
+            if step.tool in UI_TOOLS:
+                result, frame = await _call_ui_tool(step.tool, arguments)
+                if frame:
+                    yield ui_frame(frame, surface="inline")
+            else:
+                result = tools.call(self._session, state, step.tool, arguments)
             previous = result
             summary = str(result.get("summary", ""))
             yield tool_finished(step.tool, summary, result)
@@ -133,6 +140,13 @@ def _shortlist_from_search(previous: dict[str, Any]) -> dict[str, Any]:
     """Take up to five listing ids from the preceding search result."""
     listings = previous.get("listings") or []
     return {"listing_ids": [row["id"] for row in listings[:5]]}
+
+
+def _book_first_ranked(previous: dict[str, Any]) -> dict[str, Any]:
+    """Open the booking form for whichever listing ranked first."""
+    rankings = previous.get("rankings") or []
+    listing_id = rankings[0]["listing_id"] if rankings else "lst-0001"
+    return {"listing_id": listing_id, "mode": "rent"}
 
 
 # --------------------------------------------------------------------------
@@ -224,8 +238,27 @@ DEMO_EMPTY_SCRIPT: tuple[ScriptedStep, ...] = (
 )
 
 
+
+
+#: Straight to the booking form with no model involved. Exists so the MCP
+#: Apps path can be exercised without spending model quota — the tool calls,
+#: the ui event and the View are identical either way.
+DEMO_BOOKING_SCRIPT: tuple[ScriptedStep, ...] = DEMO_RENTAL_SCRIPT + (
+    ScriptedStep(
+        tool="advance_phase",
+        arguments={"target": "book"},
+        say_before="Opening the booking form.",
+    ),
+    ScriptedStep(
+        tool="open_booking_form",
+        derive_arguments=_book_first_ranked,
+    ),
+)
+
+
 SCRIPTS: dict[str, tuple[ScriptedStep, ...]] = {
     "rental": DEMO_RENTAL_SCRIPT,
     "mode_change": DEMO_MODE_CHANGE_SCRIPT,
     "empty": DEMO_EMPTY_SCRIPT,
+    "booking": DEMO_BOOKING_SCRIPT,
 }

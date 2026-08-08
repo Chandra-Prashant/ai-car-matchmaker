@@ -38,7 +38,7 @@ export interface AgentSession {
   transcript: TranscriptEntry[];
   busy: boolean;
   connectionError: string | null;
-  send: (message: string) => Promise<void>;
+  send: (message: string, script?: string) => Promise<void>;
   reset: () => Promise<void>;
 }
 
@@ -98,7 +98,7 @@ export function useAgentSession(): AgentSession {
   }, []);
 
   const send = useCallback(
-    async (message: string) => {
+    async (message: string, script?: string) => {
       if (!sessionId || busy) return;
 
       setBusy(true);
@@ -106,7 +106,7 @@ export function useAgentSession(): AgentSession {
       append({ id: nextId(), type: "user", text: message });
 
       try {
-        for await (const event of takeTurn(sessionId, message)) {
+        for await (const event of takeTurn(sessionId, message, { script })) {
           const data = event.data;
 
           switch (event.kind) {

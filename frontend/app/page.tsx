@@ -58,13 +58,25 @@ export default function Home() {
             <span className="display">Car Matchmaker</span>
             <span className="eyebrow">Buy or rent, reasoned</span>
           </div>
-          <button
-            className="btn btn-quiet"
-            onClick={session.reset}
-            disabled={session.busy}
-          >
-            Start over
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            {process.env.NODE_ENV === "development" && (
+              <button
+                className="btn btn-quiet"
+                title="Run a scripted journey — no model calls"
+                onClick={() => void session.send("book it", "booking")}
+                disabled={session.busy}
+              >
+                Scripted booking
+              </button>
+            )}
+            <button
+              className="btn btn-quiet"
+              onClick={session.reset}
+              disabled={session.busy}
+            >
+              Start over
+            </button>
+          </div>
         </div>
       </header>
 
