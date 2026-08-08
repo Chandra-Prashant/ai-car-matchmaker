@@ -192,15 +192,24 @@ class ListingFilter(BaseModel):
 
     @model_validator(mode="after")
     def _check_ranges(self) -> ListingFilter:
-        if self.price_min is not None and self.price_max is not None:
-            if self.price_min > self.price_max:
-                raise ValueError("price_min cannot exceed price_max")
-        if self.year_min is not None and self.year_max is not None:
-            if self.year_min > self.year_max:
-                raise ValueError("year_min cannot exceed year_max")
-        if self.available_from and self.available_to:
-            if self.available_from > self.available_to:
-                raise ValueError("available_from cannot be after available_to")
+        if (
+            self.price_min is not None
+            and self.price_max is not None
+            and self.price_min > self.price_max
+        ):
+            raise ValueError("price_min cannot exceed price_max")
+        if (
+            self.year_min is not None
+            and self.year_max is not None
+            and self.year_min > self.year_max
+        ):
+            raise ValueError("year_min cannot exceed year_max")
+        if (
+            self.available_from
+            and self.available_to
+            and self.available_from > self.available_to
+        ):
+            raise ValueError("available_from cannot be after available_to")
         return self
 
 

@@ -149,7 +149,7 @@ class GeneratorConfig:
     listings_per_pair_max: int = 2
 
     def resolved_reference_date(self) -> date:
-        return self.reference_date or date.today()
+        return self.reference_date or date.today()  # noqa: DTZ011 - calendar date, not a timestamp
 
 
 # --------------------------------------------------------------------------
@@ -267,7 +267,7 @@ def _rent_per_day_inr(
 def _to_eur(inr: int | None) -> int | None:
     if inr is None:
         return None
-    return int(round(inr / tx.EUR_TO_INR))
+    return round(inr / tx.EUR_TO_INR)
 
 
 # --------------------------------------------------------------------------
