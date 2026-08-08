@@ -118,11 +118,12 @@ def update_slots(
 
     updated: list[str] = []
     rejected: list[str] = []
+    to_apply: dict[str, object] = {}
 
     # Setting mode for the first time is ordinary; changing it is not.
     if mode is not None:
         if state.constraints.mode is None:
-            state.constraints.mode = mode
+            to_apply["mode"] = mode
             updated.append("mode")
         elif state.constraints.mode != mode:
             rejected.append("mode")
@@ -133,8 +134,16 @@ def update_slots(
         if name not in SETTABLE:  # pragma: no cover - defensive
             rejected.append(name)
             continue
-        setattr(state.constraints, name, value)
+        to_apply[name] = value
         updated.append(name)
+
+    # Validate through the model rather than assigning attributes directly.
+    # Tool arguments arrive as JSON, so dates are strings and enums are bare
+    # strings. setattr would store them unconverted and they would fail much
+    # later, at comparison time, far from the cause.
+    if to_apply:
+        merged = {**state.constraints.model_dump(), **to_apply}
+        state.constraints = ConstraintSet.model_validate(merged)
 
     # A rental duration and a start date imply an end date; carrying both
     # separately would let them drift apart.
