@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Checkout</title>
+<style>
+  :root {
+    --color-background-primary: light-dark(#ffffff, #171717);
+    --color-background-secondary: light-dark(#f5f5f5, #232323);
+    --color-background-warning: light-dark(#fff6e5, #3a2f16);
+    --color-background-success: light-dark(#e9f7ef, #14301f);
+    --color-text-primary: light-dark(#171717, #fafafa);
+    --color-text-secondary: light-dark(#5c5c5c, #a3a3a3);
+    --color-text-warning: light-dark(#8a5a00, #f5c66b);
+    --color-text-danger: light-dark(#b42318, #f97066);
+    --color-text-success: light-dark(#0f7038, #6ee7a8);
+    --color-border-primary: light-dark(#e0e0e0, #333333);
+    --color-border-warning: light-dark(#f0c674, #6b5518);
+    --color-border-danger: light-dark(#b42318, #f97066);
+    --font-sans: system-ui, -apple-system, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --border-radius-md: 8px;
+    color-scheme: light dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; font-size: 14px;
+    font-family: var(--font-sans);
+    color: var(--color-text-primary);
+    background: var(--color-background-primary);
+  }
+  /* Non-dismissible by design: there is no close control (FR-020). */
+  .banner {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 10px 12px; margin-bottom: 16px;
+    background: var(--color-background-warning);
+    border: 1px solid var(--color-border-warning);
+    border-radius: var(--border-radius-md);
+    color: var(--color-text-warning);
+    font-weight: 600;
+  }
+  .banner span:last-child { font-weight: 400; }
+  h2 { margin: 0 0 12px; font-size: 16px; }
+  .lines {
+    background: var(--color-background-secondary);
+    border-radius: var(--border-radius-md);
+    padding: 12px; margin-bottom: 16px;
+  }
+  .line { display: flex; justify-content: space-between; padding: 3px 0; }
+  .line .k { color: var(--color-text-secondary); }
+  .total {
+    display: flex; justify-content: space-between;
+    border-top: 1px solid var(--color-border-primary);
+    margin-top: 8px; padding-top: 8px; font-weight: 700;
+  }
+  label { display: block; margin-bottom: 4px; color: var(--color-text-secondary); }
+  input {
+    width: 100%; padding: 8px 10px; font: inherit;
+    font-family: var(--font-mono); letter-spacing: .08em;
+    color: var(--color-text-primary);
+    background: var(--color-background-secondary);
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+  }
+  input.invalid { border-color: var(--color-border-danger); }
+  .cards {
+    margin: 10px 0 16px; font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+  .cards button {
+    font-family: var(--font-mono); font-size: 12px;
+    margin: 3px 4px 0 0; padding: 4px 8px; cursor: pointer;
+    background: transparent; color: var(--color-text-secondary);
+    border: 1px dashed var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+  }
+  .err { color: var(--color-text-danger); min-height: 18px; font-size: 12px; }
+  button.pay {
+    width: 100%; padding: 11px; font: inherit; font-weight: 600; cursor: pointer;
+    border: none; border-radius: var(--border-radius-md);
+    background: var(--color-text-primary);
+    color: var(--color-background-primary);
+  }
+  button.pay[disabled] { opacity: .5; cursor: default; }
+  .done {
+    padding: 16px; text-align: center;
+    background: var(--color-background-success);
+    border-radius: var(--border-radius-md);
+  }
+  .done .ref {
+    font-family: var(--font-mono); font-size: 18px;
+    color: var(--color-text-success); margin: 8px 0;
+  }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <span>SIMULATION</span>
+  <span>No real payment is taken. Never enter a real card number.</span>
+</div>
+
+<div id="loading" style="color:var(--color-text-secondary)">Loading checkout…</div>
+
+<div id="checkout" class="hidden">
+  <h2 id="title">Payment</h2>
+  <div class="lines" id="lines"></div>
+
+  <label for="card">Test card number</label>
+  <input id="card" inputmode="numeric" autocomplete="off" placeholder="0000 0000 0000 0001">
+  <div class="cards">
+    Use one of these test cards:
+    <div id="test_cards"></div>
+  </div>
+  <div class="err" id="error"></div>
+  <button class="pay" id="pay">Pay (simulated)</button>
+</div>
+
+<div id="done" class="done hidden"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var nextId = 1, pending = {}, handlers = {};
+
+  window.addEventListener("message", function (event) {
+    var msg = event.data;
+    if (!msg || msg.jsonrpc !== "2.0") return;
+    if (msg.id !== undefined && pending[msg.id]) {
+      var p = pending[msg.id];
+      delete pending[msg.id];
+      if (msg.error) p.reject(new Error(msg.error.message || "RPC error"));
+      else p.resolve(msg.result);
+      return;
+    }
+    if (msg.method && handlers[msg.method]) handlers[msg.method](msg.params || {}, msg.id);
+  });
+
+  function request(method, params) {
+    var id = nextId++;
+    window.parent.postMessage(
+      { jsonrpc: "2.0", id: id, method: method, params: params || {} }, "*");
+    return new Promise(function (res, rej) { pending[id] = { resolve: res, reject: rej }; });
+  }
+  function notify(method, params) {
+    window.parent.postMessage({ jsonrpc: "2.0", method: method, params: params || {} }, "*");
+  }
+  function respond(id, result) {
+    if (id !== undefined) window.parent.postMessage({ jsonrpc: "2.0", id: id, result: result }, "*");
+  }
+  function on(method, fn) { handlers[method] = fn; }
+  function callTool(name, args) { return request("tools/call", { name: name, arguments: args }); }
+
+  function structured(result) {
+    if (!result) return null;
+    if (result.structuredContent) return result.structuredContent;
+    try { return JSON.parse(result.content[0].text); } catch (e) { return null; }
+  }
+
+  var lastH = 0;
+  function reportSize() {
+    var h = document.documentElement.scrollHeight;
+    if (h !== lastH) {
+      lastH = h;
+      notify("ui/notifications/size-changed",
+             { width: document.documentElement.scrollWidth, height: h });
+    }
+  }
+  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.documentElement);
+
+  function applyHostStyles(ctx) {
+    if (!ctx) return;
+    var vars = (ctx.styles || {}).variables || {};
+    Object.keys(vars).forEach(function (k) {
+      if (vars[k]) document.documentElement.style.setProperty(k, vars[k]);
+    });
+    var fonts = ((ctx.styles || {}).css || {}).fonts;
+    if (fonts) {
+      var tag = document.createElement("style");
+      tag.textContent = fonts;
+      document.head.appendChild(tag);
+    }
+    if (ctx.theme) document.documentElement.style.colorScheme = ctx.theme;
+  }
+
+  var draft = null;
+  var el = {
+    loading: document.getElementById("loading"),
+    checkout: document.getElementById("checkout"),
+    done: document.getElementById("done"),
+    title: document.getElementById("title"),
+    lines: document.getElementById("lines"),
+    cards: document.getElementById("test_cards"),
+    card: document.getElementById("card"),
+    error: document.getElementById("error"),
+    pay: document.getElementById("pay")
+  };
+
+  function money(n) { return "Rs." + Number(n || 0).toLocaleString("en-IN"); }
+
+  function render(d) {
+    draft = d;
+    el.loading.classList.add("hidden");
+    el.checkout.classList.remove("hidden");
+    el.title.textContent = d.listing_label;
+
+    el.lines.innerHTML = "";
+    (d.line_items || []).forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "line";
+      row.innerHTML = "<span class='k'></span><span class='v'></span>";
+      row.querySelector(".k").textContent = item.label;
+      row.querySelector(".v").textContent = item.value;
+      el.lines.appendChild(row);
+    });
+    var total = document.createElement("div");
+    total.className = "total";
+    total.innerHTML = "<span>Total</span><span></span>";
+    total.lastChild.textContent = money(d.amount_inr);
+    el.lines.appendChild(total);
+
+    el.cards.innerHTML = "";
+    (d.test_cards || []).forEach(function (c) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = c.number + " (" + c.outcome + ")";
+      b.addEventListener("click", function () {
+        el.card.value = c.number;
+        el.card.classList.remove("invalid");
+        el.error.textContent = "";
+      });
+      el.cards.appendChild(b);
+    });
+    reportSize();
+  }
+
+  el.pay.addEventListener("click", function () {
+    if (!draft) return;
+    el.error.textContent = "";
+    el.card.classList.remove("invalid");
+    el.pay.disabled = true;
+    el.pay.textContent = "Processing…";
+
+    callTool("submit_payment", {
+      booking_id: draft.booking_id,
+      card_number: el.card.value
+    }).then(function (result) {
+      var s = structured(result);
+      el.pay.disabled = false;
+      el.pay.textContent = "Pay (simulated)";
+
+      if (!s) { el.error.textContent = "Unexpected response."; reportSize(); return; }
+
+      if (!s.approved) {
+        el.card.classList.add("invalid");
+        el.error.textContent = s.summary;
+        reportSize();
+        return;
+      }
+
+      el.checkout.classList.add("hidden");
+      el.done.classList.remove("hidden");
+      el.done.innerHTML =
+        "<strong>Simulated payment approved</strong>" +
+        "<div class='ref'></div>" +
+        "<div style='color:var(--color-text-secondary)'>No real transaction took place.</div>";
+      el.done.querySelector(".ref").textContent = s.reference;
+      reportSize();
+
+      request("ui/message", {
+        role: "user",
+        content: {
+          type: "text",
+          text: "Payment completed (simulated). Confirmation reference " +
+                s.reference + " for booking " + s.booking.id + "."
+        }
+      }).catch(function () {});
+    }).catch(function (err) {
+      el.pay.disabled = false;
+      el.pay.textContent = "Pay (simulated)";
+      el.error.textContent = err.message || "Payment failed.";
+      reportSize();
+    });
+  });
+
+  on("ui/notifications/tool-result", function (params) {
+    var s = params.structuredContent;
+    if (!s && params.content) {
+      try { s = JSON.parse(params.content[0].text); } catch (e) { s = null; }
+    }
+    if (s && s.draft) render(s.draft);
+    else if (s) el.loading.textContent = s.summary || "Could not open checkout.";
+  });
+
+  on("ui/notifications/tool-cancelled", function (params) {
+    el.checkout.classList.add("hidden");
+    el.loading.classList.remove("hidden");
+    el.loading.textContent = "Cancelled: " + (params.reason || "unknown reason");
+  });
+
+  on("ui/notifications/host-context-changed", function (params) { applyHostStyles(params); });
+  on("ui/resource-teardown", function (_p, id) { respond(id, {}); });
+
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "checkout", version: "0.1.0" },
+    appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] }
+  }).then(function (result) {
+    applyHostStyles(result && result.hostContext);
+    notify("ui/notifications/initialized", {});
+    reportSize();
+  }).catch(function (err) {
+    el.loading.textContent = "Could not connect to the host: " + err.message;
+  });
+})();
+</script>
+</body>
+</html>
