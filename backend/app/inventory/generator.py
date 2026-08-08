@@ -5,8 +5,8 @@ buy/rent representation).
 
 DETERMINISM CONTRACT
 --------------------
-Given the same `seed` and `reference_date`, this module produces byte-identical
-output. Two mechanisms make that hold:
+Given the same `seed` and `reference_date`, this module produces
+content-identical rows. Two mechanisms make that hold:
 
 1. Iteration order is explicit (sorted keys), never dict insertion order or
    set iteration.
@@ -14,16 +14,33 @@ output. Two mechanisms make that hold:
    listing's stable identity, so adding a category or brand does not shift the
    values generated for any other listing.
 
+Note this is a claim about row content, not about SQLite file bytes — page
+allocation and header counters can differ between runs without any row
+differing.
+
 `reference_date` defaults to today because availability windows must look
 current in a demo. Tests pin it explicitly.
 
 PLAUSIBILITY MODEL
 ------------------
-Price is not drawn independently of the rest of the record. A vehicle's asking
-price derives from its segment base, adjusted for brand tier, then depreciated
-by age and usage. Mileage derives from age. This is what stops the catalogue
-from containing a cheap low-mileage flagship next to an expensive worn-out
-hatchback.
+Price is not drawn independently of the rest of the record:
+
+- Segment band sets the range for the category.
+- Model position within the brand's range anchors where in that band the
+  vehicle starts. Taxonomy model tuples are ordered entry-first, so a 3 Series
+  and a 7 Series draw from different points rather than the same uniform
+  distribution.
+- Brand tier scales the result, with per-segment overrides because a brand's
+  standing is not constant across segments.
+- Age depreciates it, and mileage above the age-expected figure penalises it
+  further.
+
+KNOWN LIMITATION
+----------------
+Model launch years are not modelled, so a listing may carry a model year
+predating that model's real introduction. Fixing this would require a `since`
+field on every catalogue entry; the cost is not judged worth it for mock
+inventory. Recorded in docs/architecture.md.
 """
 
 from __future__ import annotations
@@ -78,6 +95,31 @@ BRAND_TIER: dict[str, float] = {
 }
 DEFAULT_TIER = 1.0
 
+# Per-category overrides. A brand's tier is not constant across segments: a
+# Toyota is mid-market among MPVs but sits at the affordable end of the coupe
+# segment, where its neighbours are Porsche and Bentley.
+CATEGORY_BRAND_TIER: dict[str, dict[str, float]] = {
+    "coupe": {
+        "Toyota": 0.55,
+        "Ford": 0.55,
+        "Nissan": 0.60,
+        "Jaguar": 0.75,
+        "Chevrolet": 0.80,
+        "Lexus": 0.95,
+    },
+    "convertible": {
+        "Mazda": 0.45,
+        "Mini": 0.45,
+        "Ford": 0.55,
+        "Jaguar": 0.72,
+        "Chevrolet": 0.80,
+    },
+}
+
+# Where a model sits within its brand's range, entry to flagship.
+MODEL_POSITION_MIN = 0.15
+MODEL_POSITION_MAX = 0.85
+
 # Annual depreciation applied multiplicatively per year of age.
 DEPRECIATION_PER_YEAR = 0.87
 # Additional value lost per 10,000 km beyond the age-expected usage.
@@ -131,6 +173,25 @@ def _slug(value: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "-" for ch in value).strip("-")
 
 
+def _brand_tier(category: str, brand: str) -> float:
+    override = CATEGORY_BRAND_TIER.get(category, {}).get(brand)
+    if override is not None:
+        return override
+    return BRAND_TIER.get(brand, DEFAULT_TIER)
+
+
+def _model_position(index: int, count: int) -> float:
+    """Map a model's index in its brand tuple to a position in the segment band.
+
+    Taxonomy model tuples are ordered entry-first, so index carries real
+    pricing signal.
+    """
+    if count <= 1:
+        return 0.5
+    span = MODEL_POSITION_MAX - MODEL_POSITION_MIN
+    return MODEL_POSITION_MIN + span * (index / (count - 1))
+
+
 # --------------------------------------------------------------------------
 # Field derivation
 # --------------------------------------------------------------------------
@@ -160,15 +221,18 @@ def _expected_km(age: int, country: str) -> int:
 def _sale_price_inr(
     rng: random.Random,
     profile: tx.CategoryProfile,
+    category: str,
     brand: str,
+    model_position: float,
     age: int,
     km: int,
     country: str,
 ) -> int:
     low, high = profile["price_band_inr"]
-    # Position within the segment — where this trim sits when new.
-    base_new = rng.uniform(low, high)
-    base_new *= BRAND_TIER.get(brand, DEFAULT_TIER)
+    # Anchored by where this model sits in its brand's range, not drawn flat.
+    base_new = low + (high - low) * model_position
+    base_new *= _brand_tier(category, brand)
+    base_new *= rng.uniform(0.93, 1.07)
 
     value = base_new * (DEPRECIATION_PER_YEAR**age)
 
@@ -217,6 +281,8 @@ def _build_listing(
     brand: str,
     model: str,
     cfg: GeneratorConfig,
+    model_index: int,
+    model_count: int,
 ) -> Listing:
     profile = tx.CATEGORY_PROFILES[category]
     rng = _stream(cfg.seed, category, brand, model, listing_id)
@@ -234,7 +300,16 @@ def _build_listing(
     transmission = rng.choice(profile["transmissions"])
     seats = rng.choice(profile["seats"])
 
-    sale_price = _sale_price_inr(rng, profile, brand, age, km, country)
+    sale_price = _sale_price_inr(
+        rng,
+        profile,
+        category,
+        brand,
+        _model_position(model_index, model_count),
+        age,
+        km,
+        country,
+    )
 
     # Mode availability. Rental-eligible categories put a share of stock into
     # the rental pool; some listings are offered both ways (FR-028).
@@ -308,10 +383,21 @@ def generate(cfg: GeneratorConfig | None = None) -> list[Listing]:
             n = count_rng.randint(cfg.listings_per_pair_min, cfg.listings_per_pair_max)
 
             for i in range(n):
-                model = model_names[i % len(model_names)]
+                index = i % len(model_names)
+                model = model_names[index]
                 counter += 1
                 listing_id = f"lst-{counter:04d}"
-                listings.append(_build_listing(listing_id, category, brand, model, cfg))
+                listings.append(
+                    _build_listing(
+                        listing_id,
+                        category,
+                        brand,
+                        model,
+                        cfg,
+                        model_index=index,
+                        model_count=len(model_names),
+                    )
+                )
 
     return listings
 
