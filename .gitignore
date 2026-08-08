@@ -1,22 +1,13 @@
-# Python
 .venv/
 __pycache__/
 *.pyc
-
-# Node
 node_modules/
 .next/
 dist/
 build/
-
-# Env & secrets
 .env
 .env.local
 .claude/settings.local.json
 .claude/*.local.json
-
-# Data
 data/seed/*.db
-
-# macOS
 .DS_Store
