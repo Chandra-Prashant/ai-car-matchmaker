@@ -56,8 +56,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.inventory import taxonomy as tx
-import app.models.booking  # noqa: F401  - registers bookings table
-from app.models.listing import Base, Listing
+from app.models.listing import Listing
+from app.models.registry import Base  # registers every table
 
 # --------------------------------------------------------------------------
 # Tuning constants

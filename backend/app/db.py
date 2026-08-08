@@ -14,10 +14,7 @@ from pathlib import Path
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.listing import Base
-
-# Imported for side effects: registers the bookings table on Base.metadata.
-import app.models.booking  # noqa: F401
+from app.models.registry import Base  # registers every table
 
 _DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "seed" / "marketplace.db"
 
