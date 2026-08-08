@@ -58,7 +58,7 @@ class ToolSpec:
 
 
 def _update_slots(session: Session, state: SessionState, **kwargs: Any) -> dict:
-    return interview.update_slots(session, state, **kwargs).model_dump()
+    return interview.update_slots(session, state, **kwargs).model_dump(mode="json")
 
 
 def _revise_constraints(
@@ -66,11 +66,14 @@ def _revise_constraints(
 ) -> dict:
     return interview.revise_constraints(
         session, state, clear=clear, **kwargs
-    ).model_dump()
+    ).model_dump(mode="json")
 
 
-def _change_mode(session: Session, state: SessionState, mode: Mode) -> dict:
-    return interview.change_mode(session, state, mode).model_dump()
+def _change_mode(session: Session, state: SessionState, mode: Mode | str) -> dict:
+    # Tool arguments arrive as JSON, so an enum reaches us as a bare string.
+    # Coerce at the boundary rather than making every downstream function
+    # defend against it.
+    return interview.change_mode(session, state, Mode(mode)).model_dump(mode="json")
 
 
 def _flag_conflict(
@@ -83,13 +86,13 @@ def _flag_conflict(
 ) -> dict:
     return interview.flag_conflict(
         state, kind, fields, description, relaxations
-    ).model_dump()
+    ).model_dump(mode="json")
 
 
 def _resolve_conflict(
     session: Session, state: SessionState, kind: str | None = None
 ) -> dict:
-    return interview.resolve_conflict(session, state, kind).model_dump()
+    return interview.resolve_conflict(session, state, kind).model_dump(mode="json")
 
 
 def _run_search(session: Session, state: SessionState, limit: int = 10) -> dict:
