@@ -42,6 +42,24 @@ class WeightSource(str, enum.Enum):
 # --------------------------------------------------------------------------
 
 
+# Slots whose meaning does not depend on buy-vs-rent. When the user changes
+# mode mid-flow (Scenario C, T025), these survive and the rest are
+# re-elicited — a budget of 800000 means something entirely different as a
+# daily rate.
+#
+# Module-level rather than class attributes: Pydantic treats annotated class
+# attributes as fields, which would serialise them into the state and render
+# them as if they were the user's own constraints.
+MODE_INDEPENDENT_SLOTS: tuple[str, ...] = (
+    "use_case", "category", "seats_min", "fuel", "transmission",
+    "brand_affinity", "city", "country",
+)
+
+REQUIRED_SLOTS: tuple[str, ...] = (
+    "mode", "use_case", "category", "budget_max", "target_date",
+)
+
+
 class ConstraintSet(BaseModel):
     """What the user wants, as gathered so far.
 
@@ -68,22 +86,8 @@ class ConstraintSet(BaseModel):
     city: str | None = None
     country: str | None = None
 
-    # Slots whose meaning does not depend on buy-vs-rent. When the user
-    # changes mode mid-flow (Scenario C, T025), these survive and the rest
-    # are re-elicited — a budget of 800000 means something entirely
-    # different as a daily rate.
-    MODE_INDEPENDENT: tuple[str, ...] = (
-        "use_case", "category", "seats_min", "fuel", "transmission",
-        "brand_affinity", "city", "country",
-    )
-    REQUIRED: tuple[str, ...] = (
-        "mode", "use_case", "category", "budget_max", "target_date",
-    )
-
-    model_config = {"ignored_types": (tuple,)}
-
     def missing_required(self) -> list[str]:
-        return [name for name in self.REQUIRED if not getattr(self, name)]
+        return [name for name in REQUIRED_SLOTS if not getattr(self, name)]
 
     def is_complete(self) -> bool:
         return not self.missing_required()
@@ -104,7 +108,7 @@ class ConstraintSet(BaseModel):
         """
         kept = {
             name: getattr(self, name)
-            for name in self.MODE_INDEPENDENT
+            for name in MODE_INDEPENDENT_SLOTS
             if getattr(self, name)
         }
         return ConstraintSet(**kept)
