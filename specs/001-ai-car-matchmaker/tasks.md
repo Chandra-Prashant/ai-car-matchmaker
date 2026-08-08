@@ -13,7 +13,7 @@
 - **T001** Scaffold Python backend with `uv`; add FastAPI, uvicorn, pydantic, sse-starlette, httpx, sqlalchemy, python-dotenv; add pytest and ruff as dev dependencies. Verify `/health` responds.
 - **T002** Define the `Listing` ORM model and Pydantic schemas — id, mode availability, category, brand, model, year, price, rent_per_day, km, fuel, transmission, seats, city, availability windows, seller type, image reference. *(FR-010, FR-028)*
 - **T003** Define the category and brand taxonomy: 12 categories, 10 brands each, as a versioned data file rather than inline constants. *(FR-026)*
-- **T004** Write the deterministic inventory generator — seeded RNG, 120+ listings, plausible price/year/mileage correlations, both INR and EUR pricing. Assert that two runs produce byte-identical output. *(FR-026, FR-027)*
+- **T004** Write the deterministic inventory generator — seeded RNG, 120+ listings, plausible price/year/mileage correlations, both INR and EUR pricing. Assert that two runs produce content-identical rows. *(FR-026, FR-027)*
 - **T005** `[P]` Write the repository layer: filter queries across every field in FR-010, with pagination and total match count. *(FR-010)*
 - **T006** Write a CLI query script for manual verification of the repository layer. Not shipped in the final app; kept as a debugging tool.
 - **T007** `[P]` Unit tests for the generator (determinism, distribution across categories and brands) and the repository (each filter dimension in isolation, then combined).
