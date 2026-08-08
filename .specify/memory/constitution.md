@@ -1,50 +1,69 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# Project Constitution — AI Car Matchmaker
 
-## Core Principles
+Non-negotiable principles governing every plan, task, and implementation decision
+in this project. If a proposed change violates a principle here, the change is
+rejected or the constitution is amended first — never silently overridden.
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+## I. Spec Before Code
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+No implementation task begins without a corresponding entry in `tasks.md`, which
+must trace to a requirement in `spec.md`. Ambiguity is resolved by amending the
+spec, not by improvising in code. Git history must demonstrate this ordering.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+## II. Protocols Are Used Honestly
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+Where the challenge mandates a protocol, that protocol is genuinely implemented,
+not simulated.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+- The booking form and payment/checkout interfaces are real MCP Apps: server-side
+  `ui://` resources linked to tools via `_meta`, rendered by the host in a
+  sandboxed iframe, communicating over JSON-RPC via `postMessage`.
+- The car catalogue and agent-progress surfaces are driven by A2UI: the agent
+  emits declarative component/data JSON; the client maps components to its own
+  native widgets. The agent never emits HTML or executable code for these
+  surfaces.
+- A hand-rolled React modal styled to look like an MCP App is a constitutional
+  violation, regardless of how convincing it appears in a demo.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## III. Agent State Is Explicit
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+Conversation memory across the interview, research, and recommendation phases
+lives in an inspectable, serialisable state object — not implicitly in the LLM
+context window. Phase transitions are governed by deterministic guards, not by
+the model's discretion alone. The current state must be renderable to the user
+at any moment.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## IV. Every Recommendation Is Explained
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+No ranked result is presented without machine-readable reasoning attached:
+matched criteria, trade-offs accepted, and a score breakdown. A recommendation
+the system cannot justify is a bug, not a result.
 
-## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+## V. Safety of the Mock Transaction
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+No real payment rail, no real payment credentials, no collection of genuine card
+or bank data, and no live BMW Group APIs. The checkout flow is a clearly
+labelled simulation end to end. Test data must be visibly synthetic.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+## VI. Reproducible From Zero
+
+A reviewer with only the repository and Docker installed must reach a working
+application by following `README.md`, without contacting the author. Seeded data
+is deterministic so that a demo run today matches a demo run next month.
+
+## VII. Graceful Degradation
+
+Tools return valid text results for hosts that do not support the MCP Apps
+extension. Rich UI is an enhancement layer, never a hard dependency for
+correctness.
+
+## VIII. Observable By Default
+
+Every agent phase, tool invocation, and model call is traced. Behavioural claims
+about the agent are backed by an evaluation case, not by anecdote.
+
+## Amendment Procedure
+
+Amendments are committed as explicit changes to this file with a rationale in the
+commit message. Downstream `plan.md` and `tasks.md` are re-checked for
+consistency in the same commit.
