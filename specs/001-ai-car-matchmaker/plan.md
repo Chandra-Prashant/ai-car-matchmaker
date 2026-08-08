@@ -203,12 +203,20 @@ All return text content blocks. Structured payloads travel in `structuredContent
 
 ### 7.4 Host bridge (frontend)
 
-This is the highest-risk component. Requirements:
+This is the highest-risk component. The spec **mandates a double-iframe
+architecture** for web hosts — see `docs/architecture.md` for the confirmed
+shape. Requirements:
 
-- Render each UI resource in an iframe with an explicit `sandbox` attribute; no `allow-same-origin` combined with `allow-scripts` against a trusted origin.
-- Implement JSON-RPC over `postMessage`, validating message origin on every inbound message.
-- Relay permitted method calls to the MCP server; reject anything not on an explicit allowlist.
-- Enforce a per-app capability list; log every relayed call for the trace (FR-029).
+- Render a Sandbox Proxy on an origin distinct from the host app. In
+  development this means a second port (3000 host, 3001 proxy).
+- The Sandbox iframe carries `allow-scripts` and `allow-same-origin`; origin
+  separation, not the sandbox attribute, is the containment boundary.
+- Implement JSON-RPC over `postMessage`, validating origin on every inbound
+  message.
+- Relay permitted method calls to the MCP server; reject anything not on an
+  explicit allowlist. Never forward `ui/`-prefixed methods to the server.
+- Enforce per-app CSP constructed from the resource's `_meta.ui.csp`.
+- Log every relayed call for the trace (FR-029).
 
 Build and debug this against the MCPJam inspector **before** wiring it into the Next.js app.
 
