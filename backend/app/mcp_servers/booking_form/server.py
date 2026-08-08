@@ -18,7 +18,7 @@ support still gets a usable result (Constitution VII).
 from __future__ import annotations
 
 import secrets
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from mcp.server import MCPServer
@@ -295,7 +295,7 @@ def submit_booking(
             pickup_city=submission.pickup_city,
             notes=submission.notes,
             amount_inr=amount,
-            created_at=datetime.now(),
+            created_at=datetime.now(UTC),
         )
         session.add(booking)
         session.flush()

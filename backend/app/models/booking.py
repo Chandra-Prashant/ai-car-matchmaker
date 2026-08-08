@@ -18,7 +18,7 @@ No real payment state is ever recorded. See Constitution V.
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import Date, DateTime, Integer, String
@@ -132,3 +132,13 @@ class BookingRead(BaseModel):
     confirmed_at: datetime | None
 
     model_config = {"from_attributes": True}
+    
+    @field_validator("created_at", "confirmed_at")
+    @classmethod
+    def _assume_utc(cls, v: datetime | None) -> datetime | None:
+        """SQLite drops the offset. Timestamps are written in UTC, so
+        reattach it rather than emit a naive datetime that fails the
+        JSON Schema `date-time` format."""
+        if v is not None and v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v
