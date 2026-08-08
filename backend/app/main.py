@@ -13,6 +13,7 @@ import dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.mcp_bridge import router as mcp_router
 from app.api.sessions import router as session_router
 
 # Loaded here so uvicorn picks up the model provider key without the
@@ -41,6 +42,7 @@ app.add_middleware(
 )
 
 app.include_router(session_router)
+app.include_router(mcp_router)
 
 
 @app.get("/health")
