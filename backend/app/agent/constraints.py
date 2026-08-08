@@ -58,6 +58,17 @@ HUMAN_NAMES = {
 }
 
 
+#: Acronyms that a naive underscore-to-space conversion would lowercase.
+_CATEGORY_WORDS = {"suv": "SUV", "mpv": "MPV"}
+
+
+def humanise_category(category: str) -> str:
+    """'luxury_suv' -> 'luxury SUV'. Used in user-facing text."""
+    return " ".join(
+        _CATEGORY_WORDS.get(word, word) for word in category.split("_")
+    )
+
+
 @dataclass(frozen=True)
 class Relaxation:
     """One constraint that, if relaxed, would produce matches."""
@@ -115,7 +126,7 @@ def _suggest(field: str, constraints: ConstraintSet, found: int) -> str:
         )
     if field == "category" and constraints.category:
         return (
-            f"Looking beyond {constraints.category.replace('_', ' ')} "
+            f"Looking beyond {humanise_category(constraints.category)} "
             f"would find {found} listings."
         )
     if field == "seats_min" and constraints.seats_min:
