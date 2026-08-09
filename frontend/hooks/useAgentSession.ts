@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createSession, currentSession, takeTurn } from "@/lib/api";
+import { SurfaceStore, type Surface } from "@/lib/a2ui/store";
 import type {
   Listing,
   Phase,
@@ -36,6 +37,8 @@ export interface AgentSession {
   conflicts: string[];
   shortlistSize: number;
   transcript: TranscriptEntry[];
+  /** Every live A2UI surface, keyed by surfaceId. */
+  surfaces: Map<string, Surface>;
   busy: boolean;
   connectionError: string | null;
   send: (message: string, script?: string) => Promise<void>;
@@ -50,12 +53,11 @@ export function useAgentSession(): AgentSession {
   const [conflicts, setConflicts] = useState<string[]>([]);
   const [shortlistSize, setShortlistSize] = useState(0);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [surfaces, setSurfaces] = useState<Map<string, Surface>>(new Map());
+  const store = useRef(new SurfaceStore());
   const [busy, setBusy] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  // Listings seen this session, so rankings can be rendered with full detail
-  // without refetching what the search already returned.
-  const listingCache = useRef<Record<string, Listing>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -148,8 +150,26 @@ export function useAgentSession(): AgentSession {
               break;
 
             case "tool":
-              handleTool(data, append, listingCache);
+              handleTool(data, append);
               break;
+
+            case "a2ui": {
+              // Apply the envelope, then publish a snapshot so React sees a
+              // new Map and re-renders the affected surface.
+              const message = data.message as Parameters<
+                SurfaceStore["apply"]
+              >[0];
+              const surfaceId = store.current.apply(message);
+              setSurfaces(store.current.snapshot());
+
+              // Only inline surfaces enter the transcript; panel surfaces
+              // are rendered in place beside it.
+              const isCreate = message && "createSurface" in message;
+              if (surfaceId && isCreate && data.placement === "inline") {
+                append({ id: nextId(), type: "surface", surfaceId });
+              }
+              break;
+            }
 
             case "ui": {
               const frame = data.component as Record<string, unknown>;
@@ -197,7 +217,8 @@ export function useAgentSession(): AgentSession {
     setConflicts([]);
     setShortlistSize(0);
     setTranscript([]);
-    listingCache.current = {};
+    store.current = new SurfaceStore();
+    setSurfaces(new Map());
   }, []);
 
   return {
@@ -208,6 +229,7 @@ export function useAgentSession(): AgentSession {
     conflicts,
     shortlistSize,
     transcript,
+    surfaces,
     busy,
     connectionError,
     send,
@@ -220,7 +242,6 @@ export function useAgentSession(): AgentSession {
 function handleTool(
   data: Record<string, unknown>,
   append: (entry: TranscriptEntry) => void,
-  cache: React.MutableRefObject<Record<string, Listing>>,
 ) {
   const name = String(data.name ?? "");
   const status = String(data.status ?? "");
@@ -230,50 +251,13 @@ function handleTool(
     return;
   }
 
-  const result = (data.result ?? {}) as Record<string, unknown>;
-  const summary = String(data.summary ?? "");
-
-  // Search results become a catalogue rather than a line of text.
-  if (name === "search_listings" && Array.isArray(result.listings)) {
-    const listings = result.listings as Listing[];
-    for (const listing of listings) cache.current[listing.id] = listing;
-
-    append({ id: nextId(), type: "tool", name, status: "done", summary });
-    if (listings.length > 0) {
-      append({
-        id: nextId(),
-        type: "listings",
-        listings,
-        total: Number(result.total_matched ?? listings.length),
-      });
-    }
-    return;
-  }
-
-  // Rankings become cards with the reasoning attached — the thing the whole
-  // product is for.
-  if (name === "rank_shortlist" && Array.isArray(result.rankings)) {
-    const records = result.rankings as ReasoningRecord[];
-
-    // Rankings carry their listings, so a resumed session can render cards
-    // without having seen the search that produced them.
-    if (Array.isArray(result.listings)) {
-      for (const listing of result.listings as Listing[]) {
-        cache.current[listing.id] = listing;
-      }
-    }
-    append({ id: nextId(), type: "tool", name, status: "done", summary });
-    if (records.length > 0) {
-      append({
-        id: nextId(),
-        type: "rankings",
-        records,
-        listings: { ...cache.current },
-        weightSource: String(result.weight_source ?? "fallback"),
-      });
-    }
-    return;
-  }
-
-  append({ id: nextId(), type: "tool", name, status: "done", summary, result });
+  // Results are rendered from A2UI surfaces, not reshaped here. This is left
+  // with one job: showing that a step ran and what it concluded.
+  append({
+    id: nextId(),
+    type: "tool",
+    name,
+    status: "done",
+    summary: String(data.summary ?? ""),
+  });
 }

@@ -12,7 +12,9 @@
 import { useState } from "react";
 import Markdown from "react-markdown";
 
+import { A2uiRenderer } from "@/components/a2ui/A2uiRenderer";
 import { McpAppFrame } from "@/components/mcp-host/McpAppFrame";
+import type { Surface } from "@/lib/a2ui/store";
 
 import { categoryLabel, km, rupees } from "@/lib/api";
 import type {
@@ -381,8 +383,12 @@ function ActivityLine({
 export function TranscriptItem({
   entry,
   onAppMessage,
+  surfaces,
+  onAction,
 }: {
   entry: TranscriptEntry;
+  surfaces?: Map<string, Surface>;
+  onAction?: (name: string, context: Record<string, unknown>) => void;
   // A View's ui/message becomes the user's next turn — that is how
   // booking hands off to checkout without the user retyping anything.
   onAppMessage?: (text: string) => void;
@@ -442,40 +448,12 @@ export function TranscriptItem({
         </ActivityLine>
       );
 
-    case "listings":
-      return (
-        <section>
-          <div className="eyebrow" style={{ marginBottom: "0.5rem" }}>
-            {entry.total} matching {entry.total === 1 ? "listing" : "listings"}
-          </div>
-          <div style={{ display: "grid", gap: "0.5rem" }}>
-            {entry.listings.map((listing) => (
-              <ListingCard key={listing.id} listing={listing} />
-            ))}
-          </div>
-        </section>
-      );
-
-    case "rankings":
-      return (
-        <section>
-          <div className="eyebrow" style={{ marginBottom: "0.5rem" }}>
-            Ranked
-            {entry.weightSource === "inferred"
-              ? " using weights inferred from your priorities"
-              : " using default weights"}
-          </div>
-          <div style={{ display: "grid", gap: "0.5rem" }}>
-            {entry.records.map((record) => (
-              <RankedCard
-                key={record.listing_id}
-                record={record}
-                listing={entry.listings[record.listing_id]}
-              />
-            ))}
-          </div>
-        </section>
-      );
+    case "surface": {
+      // The agent described this UI; the renderer decides how it looks.
+      const surface = surfaces?.get(entry.surfaceId);
+      if (!surface) return null;
+      return <A2uiRenderer surface={surface} onAction={onAction} />;
+    }
 
     case "mcpApp":
       // A real MCP App: fetched from its server, rendered in a sandboxed

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { ConstraintPanel } from "@/components/ConstraintPanel";
+import { A2uiRenderer } from "@/components/a2ui/A2uiRenderer";
 import { TranscriptItem } from "@/components/Transcript";
 import { useAgentSession } from "@/hooks/useAgentSession";
 
@@ -27,6 +27,26 @@ export default function Home() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [session.transcript.length]);
+
+  const constraintSurface = session.surfaces.get("constraints");
+
+  /**
+   * An A2UI action becomes the user's next turn.
+   *
+   * The protocol allows a renderer to send actions to the agent; over this
+   * transport the natural channel is the turn endpoint the conversation
+   * already uses. Clicking "Book this one" on a card therefore drives the
+   * agent exactly as typing would, without the user having to type.
+   */
+  const handleAction = (name: string, context: Record<string, unknown>) => {
+    const label = String(context.label ?? "");
+    const id = String(context.listingId ?? "");
+    if (name === "book_listing") {
+      void submit(`Book the ${label} (${id}) for me.`);
+    } else if (name === "select_listing") {
+      void submit(`Tell me more about the ${label} (${id}).`);
+    }
+  };
 
   const submit = async (text: string) => {
     const message = text.trim();
@@ -156,6 +176,8 @@ export default function Home() {
             <TranscriptItem
               key={entry.id}
               entry={entry}
+              surfaces={session.surfaces}
+              onAction={handleAction}
               onAppMessage={(text) => void submit(text)}
             />
           ))}
@@ -163,13 +185,18 @@ export default function Home() {
           <div ref={endRef} />
         </section>
 
-        <ConstraintPanel
-          phase={session.phase}
-          known={session.known}
-          missing={session.missing}
-          conflicts={session.conflicts}
-          shortlistSize={session.shortlistSize}
-        />
+        <aside
+          className="card"
+          style={{ padding: "1rem", position: "sticky", top: "1.5rem" }}
+        >
+          {constraintSurface ? (
+            <A2uiRenderer surface={constraintSurface} />
+          ) : (
+            <p className="label" style={{ margin: 0, color: "var(--ink-3)" }}>
+              Tell the agent what you need and it will appear here.
+            </p>
+          )}
+        </aside>
       </main>
 
       <footer

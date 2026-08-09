@@ -19,7 +19,10 @@ export type EventKind =
   | "tool"
   | "progress"
   | "message"
+  /** A sandboxed MCP App View to mount. */
   | "ui"
+  /** An A2UI protocol envelope. */
+  | "a2ui"
   | "state"
   | "done"
   | "error";
@@ -162,13 +165,12 @@ export type TranscriptEntry =
     }
   | { id: string; type: "phase"; phase: Phase; message: string; allowed: boolean }
   | { id: string; type: "progress"; text: string; remaining?: number }
-  | { id: string; type: "listings"; listings: Listing[]; total: number }
   | {
       id: string;
-      type: "rankings";
-      records: ReasoningRecord[];
-      listings: Record<string, Listing>;
-      weightSource: string;
+      /** An A2UI surface to render. The client holds only its id — the
+       *  components and data live in the SurfaceStore. */
+      type: "surface";
+      surfaceId: string;
     }
   | {
       id: string;
