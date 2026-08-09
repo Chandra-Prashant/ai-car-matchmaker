@@ -1,0 +1,45 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_PATH: /data/marketplace.db
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      LLM_MODEL: ${LLM_MODEL:-gemini-3.5-flash}
+      LLM_MAX_ROUNDS: ${LLM_MAX_ROUNDS:-8}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Separate origin for MCP App Views. Not an implementation detail — the
+  # specification requires the sandbox proxy to be cross-origin from the host.
+  sandbox:
+    build:
+      context: .
+      dockerfile: sandbox/Dockerfile
+    ports:
+      - "3001:80"
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_SANDBOX_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+      sandbox:
+        condition: service_started
