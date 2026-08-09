@@ -151,6 +151,12 @@ def _shortlist_from_search(previous: dict[str, Any]) -> dict[str, Any]:
     return {"listing_ids": [row["id"] for row in listings[:5]]}
 
 
+def _checkout_for_booking(previous: dict[str, Any]) -> dict[str, Any]:
+    """Open checkout for the booking submit_booking just created."""
+    booking = previous.get("booking") or {}
+    return {"booking_id": booking.get("id", "")}
+
+
 def _book_first_ranked(previous: dict[str, Any]) -> dict[str, Any]:
     """Open the booking form for whichever listing ranked first."""
     rankings = previous.get("rankings") or []
@@ -261,6 +267,143 @@ DEMO_BOOKING_SCRIPT: tuple[ScriptedStep, ...] = DEMO_RENTAL_SCRIPT + (
     ScriptedStep(
         tool="open_booking_form",
         derive_arguments=_book_first_ranked,
+        say_after=(
+            "Fill in the form above. Once you submit it I'll take you to "
+            "payment — it's a simulation, so no real card is needed."
+        ),
+    ),
+)
+
+
+#: Booking through to the simulated checkout, with no model involved. Both
+#: MCP Apps are exercised: the form, then the payment interface.
+DEMO_CHECKOUT_SCRIPT: tuple[ScriptedStep, ...] = DEMO_BOOKING_SCRIPT + (
+    ScriptedStep(
+        tool="submit_booking",
+        arguments={
+            "listing_id": "lst-0001",
+            "mode": "rent",
+            "full_name": "Prashant Chandra",
+            "email": "demo@example.com",
+            "phone": "9045333032",
+        },
+    ),
+    ScriptedStep(
+        tool="open_checkout",
+        derive_arguments=_checkout_for_booking,
+        say_before="Taking you to payment.",
+    ),
+)
+
+
+
+
+# --------------------------------------------------------------------------
+# Multi-turn demo
+# --------------------------------------------------------------------------
+
+def _shortlist_top(previous: dict[str, Any]) -> dict[str, Any]:
+    listings = previous.get("listings") or []
+    return {"listing_ids": [row["id"] for row in listings[:5]]}
+
+
+def _book_top_ranked(previous: dict[str, Any]) -> dict[str, Any]:
+    rankings = previous.get("rankings") or []
+    listing_id = rankings[0]["listing_id"] if rankings else "lst-0001"
+    return {"listing_id": listing_id, "mode": "rent"}
+
+
+def _submit_for_top(previous: dict[str, Any]) -> dict[str, Any]:
+    return {}
+
+
+def _checkout_for_booking(previous: dict[str, Any]) -> dict[str, Any]:
+    booking = previous.get("booking") or {}
+    return {"booking_id": booking.get("id", "")}
+
+
+#: One act per user message. The runner picks the act matching how many turns
+#: have already been taken, so the conversation advances naturally.
+DEMO_ACTS: tuple[tuple[ScriptedStep, ...], ...] = (
+    # Act 1 — capture what was said, ask the one thing still missing.
+    (
+        ScriptedStep(
+            tool="update_slots",
+            arguments={
+                "mode": "rent",
+                "use_case": "family trip",
+                "budget_max": 3500,
+                "target_date": "2026-09-12",
+                "seats_min": 7,
+            },
+        ),
+        ScriptedStep(
+            tool="session_status",
+            arguments={},
+            say_after=(
+                "For a family trip with seven people, an **MPV** or a "
+                "**full-size SUV** would both work — a **van** if you need "
+                "more luggage space.\n\nWhich would you prefer?"
+            ),
+        ),
+    ),
+
+    # Act 2 — search, shortlist, rank.
+    (
+        ScriptedStep(
+            tool="update_slots",
+            arguments={"category": "mpv"},
+        ),
+        ScriptedStep(tool="advance_phase", arguments={"target": "research"}),
+        ScriptedStep(tool="search_listings", arguments={"limit": 6}),
+        ScriptedStep(tool="set_shortlist", derive_arguments=_shortlist_top),
+        ScriptedStep(tool="advance_phase", arguments={"target": "recommend"}),
+        ScriptedStep(
+            tool="rank_shortlist",
+            arguments={"emphasis": {"budget": 0.08, "seats": 0.07}},
+            say_after=(
+                "The brand-new Ertiga takes the top spot — zero mileage and "
+                "eight seats, comfortably inside your daily budget. The "
+                "Stargazer is the value pick if you'd rather spend less per "
+                "day.\n\nExpand *how this score was reached* on any card to "
+                "see what drove its ranking."
+            ),
+        ),
+    ),
+
+    # Act 3 — open the booking form.
+    (
+        ScriptedStep(tool="advance_phase", arguments={"target": "book"}),
+        ScriptedStep(
+            tool="open_booking_form",
+            derive_arguments=_book_top_ranked,
+            say_after=(
+                "Here's the booking form, prefilled with what you've already "
+                "told me. Everything stays editable."
+            ),
+        ),
+    ),
+
+    # Act 4 — the form has been submitted; take payment.
+    (
+        ScriptedStep(
+            tool="submit_booking",
+            arguments={
+                "listing_id": "lst-0001",
+                "mode": "rent",
+                "full_name": "Prashant Chandra",
+                "email": "demo@example.com",
+                "phone": "9045333032",
+            },
+        ),
+        ScriptedStep(
+            tool="open_checkout",
+            derive_arguments=_checkout_for_booking,
+            say_after=(
+                "Payment is entirely simulated — use one of the test cards "
+                "shown. No real transaction takes place."
+            ),
+        ),
     ),
 )
 
@@ -270,4 +413,28 @@ SCRIPTS: dict[str, tuple[ScriptedStep, ...]] = {
     "mode_change": DEMO_MODE_CHANGE_SCRIPT,
     "empty": DEMO_EMPTY_SCRIPT,
     "booking": DEMO_BOOKING_SCRIPT,
+    "checkout": DEMO_CHECKOUT_SCRIPT,
 }
+
+
+class ActRunner:
+    """Runs one act of the demo per user message.
+
+    Which act runs is derived from how many user turns the session has
+    already seen, so the flow advances as a conversation would without any
+    extra state to keep in sync.
+    """
+
+    def __init__(self, session: Session, delay: float = 0.25) -> None:
+        self._session = session
+        self._delay = delay
+
+    async def run_turn(
+        self, state: SessionState, user_message: str
+    ) -> AsyncIterator[AgentEvent]:
+        turns = sum(1 for turn in state.history if turn.role == "user")
+        act = DEMO_ACTS[min(turns, len(DEMO_ACTS) - 1)]
+
+        runner = ScriptedRunner(self._session, act, delay=self._delay)
+        async for event in runner.run_turn(state, user_message):
+            yield event

@@ -66,6 +66,7 @@ TOOLS_BY_PHASE: dict[Phase, tuple[str, ...]] = {
         "open_booking_form",
         "open_checkout",
         "record_booking",
+        "submit_booking",
         "compare_listings",
         "advance_phase",
     ),

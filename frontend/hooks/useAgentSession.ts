@@ -71,7 +71,10 @@ export function useAgentSession(): AgentSession {
 
   useEffect(() => {
     let cancelled = false;
-    currentSession()
+    // A fresh session on every page load. The backend would happily resume
+    // the previous one, but a reloaded page has an empty transcript while the
+    // agent remembers everything — which reads as the agent skipping ahead.
+    createSession()
       .then((summary) => {
         if (cancelled) return;
         setSessionId(summary.session_id);

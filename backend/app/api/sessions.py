@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.agent.phases import phase_status
 from app.agent.runner import ModelRunner
-from app.agent.scripted import SCRIPTS, ScriptedRunner
+from app.agent.scripted import SCRIPTS, ActRunner, ScriptedRunner
 from app.api.events import stream_sse
 from app.db import get_session
 from app.state.models import SessionState
@@ -156,7 +156,10 @@ def take_turn(
     if state is None:
         raise HTTPException(status_code=404, detail="No such session")
 
-    if body.script:
+    if body.script == "demo":
+        # The scripted demo: one act per message, no model calls.
+        runner = ActRunner(db)
+    elif body.script:
         steps = SCRIPTS.get(body.script)
         if steps is None:
             raise HTTPException(

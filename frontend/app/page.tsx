@@ -23,6 +23,9 @@ const OPENERS = [
 export default function Home() {
   const session = useAgentSession();
   const [draft, setDraft] = useState("");
+  // Demo mode drives a scripted multi-act flow with no model calls —
+  // used for reproducible demonstrations and when quota is exhausted.
+  const [demo, setDemo] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function Home() {
     const message = text.trim();
     if (!message || session.busy) return;
     setDraft("");
-    await session.send(message);
+    await session.send(message, demo ? "demo" : undefined);
   };
 
   return (
@@ -84,10 +87,10 @@ export default function Home() {
               <button
                 className="btn btn-quiet"
                 title="Run a scripted journey — no model calls"
-                onClick={() => void session.send("book it", "booking")}
+                onClick={() => setDemo((d) => !d)}
                 disabled={session.busy}
               >
-                Scripted booking
+                {demo ? "Demo mode: on" : "Demo mode: off"}
               </button>
             )}
             <button

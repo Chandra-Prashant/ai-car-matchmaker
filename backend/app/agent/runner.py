@@ -265,6 +265,9 @@ def _auto_advance(state: SessionState) -> tuple[str, Phase] | None:
 UI_TOOLS = {
     "open_booking_form": ("booking-form", "ui://booking/form"),
     "open_checkout": ("checkout", "ui://checkout/payment"),
+    # Called directly by the checkout demo script so both MCP Apps can be
+    # exercised without a model.
+    "submit_booking": ("booking-form", ""),
 }
 
 
@@ -304,6 +307,12 @@ async def _call_ui_tool(
     # and the model gets the reason instead.
     if structured.get("error"):
         return {"summary": summary, "error": structured["error"]}, {}
+
+    # Tools without a UI resource are relayed for their result alone —
+    # submit_booking creates a booking whose id the next step needs, and
+    # reshaping it to {summary, opened} would throw that away.
+    if not uri:
+        return {**structured, "summary": summary}, {}
 
     return {"summary": summary, "opened": True}, frame
 
