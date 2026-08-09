@@ -50,8 +50,11 @@ class EventKind(str, Enum):
     PROGRESS = "progress"
     #: Assistant text for the conversation.
     MESSAGE = "message"
-    #: A declarative A2UI component tree.
+    #: A sandboxed MCP App View to mount.
     UI = "ui"
+    #: An A2UI protocol envelope — createSurface, updateComponents,
+    #: updateDataModel or deleteSurface.
+    A2UI = "a2ui"
     #: The session state panel, so the client never derives it locally.
     STATE = "state"
     #: Turn finished normally.
@@ -145,6 +148,19 @@ def ui_frame(component: dict[str, Any], surface: str = "inline") -> AgentEvent:
     """
     return AgentEvent(
         kind=EventKind.UI, data={"surface": surface, "component": component}
+    )
+
+
+def a2ui_message(message: dict[str, Any], surface: str = "inline") -> AgentEvent:
+    """One A2UI envelope.
+
+    `surface` is a placement hint for the client — `inline` in the
+    transcript, `panel` in the persistent side column. It is not part of the
+    A2UI protocol; the protocol's own surfaceId identifies *what* is being
+    updated, while this says *where* it belongs in the page.
+    """
+    return AgentEvent(
+        kind=EventKind.A2UI, data={"placement": surface, "message": message}
     )
 
 

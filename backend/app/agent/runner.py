@@ -46,8 +46,10 @@ from app.agent.phases import (
     available_tools,
     turn_cap_reached,
 )
+from app.a2ui import surfaces as a2ui
 from app.api.events import (
     AgentEvent,
+    a2ui_message,
     ui_frame,
     done_event,
     error_event,
@@ -306,6 +308,71 @@ async def _call_ui_tool(
     return {"summary": summary, "opened": True}, frame
 
 
+#: Tool results that produce a visible surface, and the builder for each.
+SURFACE_BUILDERS = ("search_listings", "rank_shortlist", "compute_tco")
+
+
+def _surfaces_for(
+    name: str, result: dict[str, Any], state: SessionState, turn: int
+) -> list[dict[str, Any]]:
+    """Build the A2UI envelopes a tool result implies.
+
+    The agent decides what to show by calling a tool; this decides how to
+    describe it. Nothing here renders anything — the client owns that, which
+    is the separation the protocol exists to enforce.
+    """
+    from app.models.listing import ListingRead, Mode
+    from app.state.models import ReasoningRecord
+
+    if name == "search_listings":
+        if result.get("empty"):
+            return [
+                a2ui.conflict_surface(
+                    f"empty_{turn}",
+                    str(result.get("summary", "Nothing matched.")),
+                    [],
+                )
+            ]
+        listings = [
+            ListingRead.model_validate(row) for row in result.get("listings", [])
+        ]
+        if not listings:
+            return []
+        return [
+            a2ui.listings_surface(
+                f"results_{turn}",
+                listings,
+                int(result.get("total_matched", len(listings))),
+                state.constraints.mode,
+            )
+        ]
+
+    if name == "rank_shortlist":
+        records = [
+            ReasoningRecord.model_validate(row)
+            for row in result.get("rankings", [])
+        ]
+        listings = {
+            row["id"]: ListingRead.model_validate(row)
+            for row in result.get("listings", [])
+        }
+        if not records or not listings:
+            return []
+        return [
+            a2ui.rankings_surface(
+                f"ranked_{turn}",
+                records,
+                listings,
+                str(result.get("weight_source", "fallback")),
+            )
+        ]
+
+    if name == "compute_tco" and result.get("duration_days"):
+        return [a2ui.tco_surface(f"tco_{turn}", result)]
+
+    return []
+
+
 def _echo_tool_call(call: Any) -> dict[str, Any]:
     """Rebuild a tool call for the next request, preserving provider extras.
 
@@ -349,6 +416,13 @@ class ModelRunner:
     ) -> AsyncIterator[AgentEvent]:
         state.record_turn("user", user_message)
         yield state_event(state)
+
+        # The panel's structure is sent once; every later change to it in
+        # this turn travels as data alone. That split is the reason A2UI
+        # separates components from the data model, and the panel is where
+        # it earns its keep.
+        yield a2ui_message(a2ui.delete_surface(a2ui.CONSTRAINTS_SURFACE), "panel")
+        yield a2ui_message(a2ui.constraints_surface(state), "panel")
 
         if turn_cap_reached(state):
             yield message(
@@ -448,6 +522,10 @@ class ModelRunner:
                         remaining=int(result.get("total_matched", 0)),
                     )
 
+                for envelope in _surfaces_for(name, result, state, round_index):
+                    yield a2ui_message(envelope, "inline")
+
+                yield a2ui_message(a2ui.constraints_update(state), "panel")
                 yield state_event(state)
 
                 # Auto-advance when the guard already permits it. The state

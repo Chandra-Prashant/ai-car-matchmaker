@@ -29,13 +29,15 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.agent import tools
-from app.agent.runner import UI_TOOLS, _call_ui_tool
+from app.a2ui import surfaces as a2ui
+from app.agent.runner import UI_TOOLS, _call_ui_tool, _surfaces_for
 from app.api.events import (
     AgentEvent,
     done_event,
     message,
     phase_event,
     progress,
+    a2ui_message,
     state_event,
     tool_finished,
     ui_frame,
@@ -85,9 +87,12 @@ class ScriptedRunner:
         state.record_turn("user", user_message)
         yield state_event(state)
 
+        yield a2ui_message(a2ui.delete_surface(a2ui.CONSTRAINTS_SURFACE), "panel")
+        yield a2ui_message(a2ui.constraints_surface(state), "panel")
+
         previous: dict[str, Any] | None = None
 
-        for step in self._steps:
+        for index, step in enumerate(self._steps):
             if step.say_before:
                 yield message(step.say_before)
 
@@ -122,6 +127,10 @@ class ScriptedRunner:
                     remaining=int(result.get("total_matched", 0)),
                 )
 
+            for envelope in _surfaces_for(step.tool, result, state, index):
+                yield a2ui_message(envelope, "inline")
+
+            yield a2ui_message(a2ui.constraints_update(state), "panel")
             yield state_event(state)
 
             if step.say_after:
