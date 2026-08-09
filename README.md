@@ -243,3 +243,9 @@ specs/           spec, plan, tasks
   between markets for reasons this does not model.
 - Session persistence is single-browser by design; cross-device resumption is
   out of scope.
+
+
+# YouTube Link for the Demo Video
+
+https://youtu.be/_oBgdAJFUmU?si=omd5QyO-GNlfdZcb
+
