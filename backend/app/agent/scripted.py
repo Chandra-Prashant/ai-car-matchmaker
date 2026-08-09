@@ -30,7 +30,12 @@ from sqlalchemy.orm import Session
 
 from app.agent import tools
 from app.a2ui import surfaces as a2ui
-from app.agent.runner import UI_TOOLS, _call_ui_tool, _surfaces_for
+from app.agent.runner import (
+    UI_TOOLS,
+    _call_ui_tool,
+    _progress_steps,
+    _surfaces_for,
+)
 from app.api.events import (
     AgentEvent,
     done_event,
@@ -89,6 +94,7 @@ class ScriptedRunner:
 
         yield a2ui_message(a2ui.delete_surface(a2ui.CONSTRAINTS_SURFACE), "panel")
         yield a2ui_message(a2ui.constraints_surface(state), "panel")
+        yield a2ui_message(a2ui.progress_surface(), "progress")
 
         previous: dict[str, Any] | None = None
 
@@ -99,6 +105,12 @@ class ScriptedRunner:
             arguments = step.resolve(previous)
 
             yield tool_started(step.tool, arguments)
+            yield a2ui_message(
+                a2ui.progress_update(
+                    _progress_steps(state, step.tool.replace("_", " "))
+                ),
+                "progress",
+            )
             if self._delay:
                 await asyncio.sleep(self._delay)
 

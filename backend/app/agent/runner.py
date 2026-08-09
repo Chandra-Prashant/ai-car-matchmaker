@@ -321,6 +321,33 @@ async def _call_ui_tool(
 SURFACE_BUILDERS = ("search_listings", "rank_shortlist", "compute_tco")
 
 
+PHASE_LABELS = [
+    (Phase.INTERVIEW, "Understanding what you need"),
+    (Phase.RESEARCH, "Searching listings"),
+    (Phase.RECOMMEND, "Ranking against your priorities"),
+    (Phase.BOOK, "Booking"),
+]
+
+
+def _progress_steps(state: SessionState, activity: str | None = None) -> list[dict]:
+    """Live agent progress as A2UI data.
+
+    Sent as updateDataModel against a surface whose structure was created
+    once, so the timeline animates without resending its components.
+    """
+    order = [p for p, _ in PHASE_LABELS]
+    current = order.index(state.phase) if state.phase in order else len(order)
+
+    steps = []
+    for index, (phase, label) in enumerate(PHASE_LABELS):
+        status = "done" if index < current else "active" if index == current else "pending"
+        text = label
+        if status == "active" and activity:
+            text = f"{label} — {activity}"
+        steps.append({"label": text, "status": status})
+    return steps
+
+
 def _surfaces_for(
     name: str, result: dict[str, Any], state: SessionState, turn: int
 ) -> list[dict[str, Any]]:
@@ -432,6 +459,10 @@ class ModelRunner:
         # it earns its keep.
         yield a2ui_message(a2ui.delete_surface(a2ui.CONSTRAINTS_SURFACE), "panel")
         yield a2ui_message(a2ui.constraints_surface(state), "panel")
+        yield a2ui_message(a2ui.progress_surface(), "progress")
+        yield a2ui_message(
+            a2ui.progress_update(_progress_steps(state, "starting")), "progress"
+        )
 
         if turn_cap_reached(state):
             yield message(
@@ -498,6 +529,12 @@ class ModelRunner:
                 arguments = _normalise(name, raw)
 
                 yield tool_started(name, arguments)
+                yield a2ui_message(
+                    a2ui.progress_update(
+                        _progress_steps(state, name.replace("_", " "))
+                    ),
+                    "progress",
+                )
 
                 if name in UI_TOOLS:
                     result, frame = await _call_ui_tool(name, arguments)
@@ -535,6 +572,13 @@ class ModelRunner:
                     yield a2ui_message(envelope, "inline")
 
                 yield a2ui_message(a2ui.constraints_update(state), "panel")
+                yield a2ui_message(
+                    a2ui.progress_update(
+                        _progress_steps(state),
+                        int(result.get("total_matched", 0)) or None,
+                    ),
+                    "progress",
+                )
                 yield state_event(state)
 
                 # Auto-advance when the guard already permits it. The state

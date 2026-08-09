@@ -33,6 +33,7 @@ export default function Home() {
   }, [session.transcript.length]);
 
   const constraintSurface = session.surfaces.get("constraints");
+  const progressSurface = session.surfaces.get("progress");
 
   /**
    * An A2UI action becomes the user's next turn.
@@ -205,6 +206,11 @@ export default function Home() {
           className="card"
           style={{ padding: "1rem", position: "sticky", top: "1.5rem" }}
         >
+          {progressSurface && (
+            <div style={{ marginBottom: "1rem", paddingBottom: "1rem", borderBottom: "1px solid var(--rule)" }}>
+              <A2uiRenderer surface={progressSurface} />
+            </div>
+          )}
           {constraintSurface ? (
             <A2uiRenderer surface={constraintSurface} />
           ) : (
