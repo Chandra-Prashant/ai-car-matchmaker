@@ -41,14 +41,14 @@ No violations. No complexity exceptions requested.
 | Concern | Choice | Rationale |
 |---|---|---|
 | Language (backend) | Python 3.12 | Agent SDK and MCP SDK are Python-first; matches existing skill set. |
-| Agent harness | Claude Agent SDK | Native MCP client support removes an entire integration layer. Permitted by challenge rules. |
+| Agent harness | Hand-rolled tool-use loop over the OpenAI chat-completions shape | The Claude Agent SDK wraps the Claude Code CLI, which would put a Node binary and an interactive login inside the container — unacceptable for a `docker compose up` submission. A provider-agnostic loop keeps the orchestration explicit and lets any compatible endpoint drive it. |
 | Web framework | FastAPI | Async, Pydantic-native, SSE-friendly. |
 | Agent → client transport | SSE over HTTP | A2UI messages stream to the client; SSE is sufficient (unidirectional) and far simpler than WebSockets. Client → agent uses ordinary POST. |
-| Frontend | Next.js (App Router) + TypeScript + Tailwind | A2UI renderer and MCP Apps host both live here. |
+| Frontend | Next.js (App Router) + TypeScript | A2UI renderer with a custom component catalog, plus the MCP Apps host. |
 | Persistence | SQLite via SQLAlchemy | Zero-ops, file-backed, trivially reproducible in Docker. Postgres is unnecessary at 120 listings. |
 | Session store | SQLite table, session id in a cookie | Satisfies FR-025 at single-browser scope. |
 | MCP servers | Python MCP SDK, stdio transport locally | Three separate servers (Section 7). |
-| Observability | OpenTelemetry SDK → Langfuse | Satisfies FR-029 and the challenge bonus. |
+| Observability | Not implemented | Bonus item; descoped against the deadline in favour of completing A2UI and the MCP Apps, both of which are required. |
 | Evals | pytest + recorded transcripts | Satisfies FR-030. |
 | Packaging | Docker Compose (backend, frontend, mcp servers) | Satisfies submission requirement. |
 
@@ -291,3 +291,41 @@ The agent emits declarative component/data JSON. The frontend owns all styling a
 | 2 | All three MCP servers working in MCPJam, including both Apps rendering and round-tripping data. |
 | 3 | Full flow in the browser: interview → research → ranked results → booking → mock checkout → confirmation. |
 | 4 | Traces in Langfuse, eval suite green, Compose up from clean clone, README, deck, video. |
+
+
+---
+
+## 13. Deviations from this plan
+
+Recorded rather than quietly absorbed, per Constitution I.
+
+**Agent harness.** Section 3 originally named the Claude Agent SDK. It wraps
+the Claude Code CLI, which cannot be containerised without an interactive
+login, so the runner was written directly against the OpenAI
+chat-completions shape and made provider-agnostic. The `AgentRunner`
+protocol means the choice is a constructor argument, not an architecture.
+
+**A2UI adopted at v1.0 with a custom catalog.** The specification anticipates
+this — composing a ranked car card from generic Rows and Texts would hand the
+agent visual decisions it should not be making. `backend/app/a2ui/catalog.py`
+declares the product's own vocabulary; the client owns rendering.
+
+**Ranked cards carry A2UI actions.** Not in the original plan. "Book this
+one" dispatches an action whose context bindings resolve against that card's
+item scope, so the interface drives the conversation rather than only
+displaying it.
+
+**MCP servers connect in-process.** The mcp v2 `Client` accepts an
+`MCPServer` instance directly, so the host bridge uses an in-memory transport
+rather than spawning subprocesses. Same protocol, one less moving part; the
+servers keep their `main()` entrypoints and were verified standalone in
+MCPJam.
+
+**A deterministic runner sits alongside the model runner.** Originally only a
+test fixture, it became a first-class demo mode: free-tier model quotas are
+small enough that reproducible demonstration has real value, and the eval
+harness asserts machinery rather than model behaviour.
+
+**Observability descoped.** OpenTelemetry and Langfuse were planned as a
+bonus. With A2UI and the MCP Apps both mandatory and the deadline fixed, they
+were dropped rather than done badly.

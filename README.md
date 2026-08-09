@@ -160,16 +160,20 @@ accepts `anthropic`, `openai`, `groq` and `ollama`.
 
 ### Trying it without a model
 
-A deterministic runner drives the same tools, phases and surfaces with no
-model involved — used by the eval harness and useful for reproducible demos:
+Toggle **Demo mode** in the header and the conversation runs against a
+deterministic runner instead of a model — same tools, same phases, same A2UI
+surfaces, same MCP Apps. Type the four messages below and the full journey
+plays out with no API calls:
 
-```bash
-curl -N -X POST "http://localhost:8000/api/sessions/$SID/turn" \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"book it","script":"booking"}'
-```
+1. `I need to rent a 7-seater for a family trip in September, up to ₹3,500 a day`
+2. `MPV`
+3. `Book the top one for me`
+4. Fill the booking form and submit — checkout follows automatically
 
-Available scripts: `rental`, `mode_change`, `empty`, `booking`.
+This exists for the eval harness, which asserts agent machinery without the
+cost and flakiness of driving a real model, and it doubles as a reproducible
+demo. Single-turn scripts are also available over the API via
+`{"script": "rental" | "mode_change" | "empty" | "booking"}`.
 
 ---
 
@@ -181,7 +185,7 @@ Available scripts: `rental`, `mode_change`, `empty`, `booking`.
 | then `Actually my budget is tight — nothing over ₹2,200 a day, and I don't care how old the car is` | Weight inference: the same shortlist reorders, and the contribution bar shifts |
 | `A luxury SUV under ₹7 lakh` | Conflict detection: names the binding constraint and quantifies the relaxation |
 | `I need a car for six weeks — not sure whether to rent or buy` | Buy-vs-rent cost comparison with a crossover point |
-| then `Book the top one for me` | MCP Apps: booking form and mock checkout inside the conversation |
+| then `Book the top one for me` | MCP Apps: booking form, then simulated checkout, both inside the conversation |
 
 Checkout test cards: `0000000000000001` approves, `4000000000000002` declines.
 Anything else is rejected as not-a-test-card.

@@ -2,6 +2,12 @@
 
 **Feature:** `001-ai-car-matchmaker`
 **Derived from:** `plan.md`
+## Status
+
+Phases 1-3 complete. T042-T045 (observability and evals) descoped against the
+deadline — see `plan.md` section 13. A2UI work was added after the original
+breakdown and appears as T060-T063 below.
+
 **Convention:** `[P]` marks tasks with no dependency on the immediately preceding task. Each task is one commit. Every task cites the requirement it serves.
 
 ---
@@ -109,3 +115,22 @@
 - Phase 2 must fully pass in MCPJam before Phase 3 begins. This is the single most important sequencing constraint in the project.
 - T038–T041 depend on Phase 2 being complete but are independent of 3a.
 - T048 must run before T051; do not record a demo of an app that has not been verified from a clean clone.
+
+
+---
+
+## Phase 5 — A2UI (added after the original breakdown)
+
+- **T060** Define the A2UI v1.0 component catalog — CarCard, RankedCarCard,
+  ContributionBar, ConstraintPanel, ProgressTimeline, TcoComparison,
+  ConflictNotice — with `instructions` telling the agent to use them rather
+  than composing from primitives. *(Done)*
+- **T061** Build surface constructors emitting createSurface,
+  updateComponents, updateDataModel and deleteSurface. The constraint panel
+  sends structure once and data thereafter. *(Done)*
+- **T062** Client-side surface store: adjacency list, JSON Pointer
+  resolution, list templates with per-item scope, renderer-side functions.
+  *(Done)*
+- **T063** React renderer dispatching component names to the catalog's
+  implementations, with actions resolving context bindings at dispatch.
+  *(Done)*
