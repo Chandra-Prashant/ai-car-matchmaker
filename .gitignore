@@ -11,3 +11,5 @@ build/
 .claude/*.local.json
 data/seed/*.db
 .DS_Store
+backend/.venv/
+backend/.pytest_cache/
