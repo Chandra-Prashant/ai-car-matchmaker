@@ -405,6 +405,88 @@ function ProgressTimeline({ props }: { props: Props }) {
   );
 }
 
+function ConstraintPanel({ props }: { props: Props }) {
+  const known = (props.known ?? {}) as Record<string, unknown>;
+  const missing = (props.missing ?? []) as string[];
+  const conflicts = (props.conflicts ?? []) as string[];
+  const phase = String(props.phase ?? "interview");
+
+  const PHASES = [
+    { key: "interview", label: "Needs" },
+    { key: "research", label: "Search" },
+    { key: "recommend", label: "Rank" },
+    { key: "book", label: "Book" },
+  ];
+  const active = PHASES.findIndex((p) => p.key === phase);
+
+  const LABELS: Record<string, string> = {
+    mode: "Buying or renting", use_case: "Use", category: "Type",
+    budget_max: "Budget", target_date: "From", seats_min: "Seats",
+    duration_days: "Duration", fuel: "Fuel", transmission: "Gearbox",
+    brand_affinity: "Brands", city: "City", country: "Country",
+  };
+
+  const show = (k: string, v: unknown) => {
+    if (Array.isArray(v)) return v.join(", ");
+    if (k === "budget_max" || k === "budget_min") return rupees(Number(v));
+    return String(v);
+  };
+
+  return (
+    <div>
+      <ol style={{ display: "flex", gap: "0.375rem", listStyle: "none", margin: "0 0 1rem", padding: 0 }}>
+        {PHASES.map((p, i) => (
+          <li key={p.key} style={{ flex: 1 }}>
+            <div style={{ height: 2, background: i < active ? "var(--ink-3)" : i === active ? "var(--signal)" : "var(--rule)" }} />
+            <div className="eyebrow" style={{ marginTop: 6, fontSize: "0.5625rem", letterSpacing: "0.06em", whiteSpace: "nowrap", color: i === active ? "var(--signal)" : "var(--ink-3)" }}>
+              {p.label}
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      {Object.keys(known).length === 0 ? (
+        <p className="label" style={{ margin: 0, color: "var(--ink-3)" }}>Nothing captured yet.</p>
+      ) : (
+        <dl style={{ margin: 0 }}>
+          {Object.entries(known).map(([k, v]) => (
+            <div className="spec-row" key={k}>
+              <dt>{LABELS[k] ?? k.replace(/_/g, " ")}</dt>
+              <dd>{show(k, v)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {missing.length > 0 && (
+        <div style={{ marginTop: "1rem" }}>
+          <div className="eyebrow" style={{ marginBottom: "0.375rem" }}>Still needed</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
+            {missing.map((k) => (
+              <span key={k} className="figure" style={{ fontSize: "0.6875rem", padding: "0.125rem 0.375rem", border: "1px dashed var(--rule-strong)", borderRadius: "var(--radius)", color: "var(--ink-3)" }}>
+                {LABELS[k] ?? k}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {conflicts.map((c) => (
+        <div key={c} style={{ marginTop: "1rem", padding: "0.625rem 0.75rem", background: "var(--signal-soft)", border: "1px solid var(--signal)", borderRadius: "var(--radius)", fontSize: "0.8125rem" }}>
+          {c}
+        </div>
+      ))}
+
+      {typeof props.shortlistSize === "number" && props.shortlistSize > 0 && (
+        <div className="spec-row" style={{ marginTop: "1rem" }}>
+          <dt>Shortlisted</dt>
+          <dd>{props.shortlistSize}</dd>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Section({ props, ctx }: { props: Props; ctx: RenderContext }) {
   return (
     <section>
@@ -441,6 +523,7 @@ const IMPLEMENTATIONS: Record<
   ConflictNotice,
   TcoComparison,
   ProgressTimeline,
+  ConstraintPanel,
   Section,
   Text,
 };

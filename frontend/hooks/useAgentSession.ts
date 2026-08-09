@@ -37,6 +37,15 @@ export interface AgentSession {
   conflicts: string[];
   shortlistSize: number;
   transcript: TranscriptEntry[];
+  /** The MCP App currently open, if any. Held outside the transcript so
+   *  streaming events cannot remount its iframe mid-handshake. */
+  activeApp: {
+    uri: string;
+    server: string;
+    toolName: string;
+    toolInput: Record<string, unknown>;
+    toolResult: Record<string, unknown> | null;
+  } | null;
   /** Every live A2UI surface, keyed by surfaceId. */
   surfaces: Map<string, Surface>;
   busy: boolean;
@@ -55,6 +64,7 @@ export function useAgentSession(): AgentSession {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [surfaces, setSurfaces] = useState<Map<string, Surface>>(new Map());
   const store = useRef(new SurfaceStore());
+  const [activeApp, setActiveApp] = useState<AgentSession["activeApp"]>(null);
   const [busy, setBusy] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
@@ -173,9 +183,7 @@ export function useAgentSession(): AgentSession {
 
             case "ui": {
               const frame = data.component as Record<string, unknown>;
-              append({
-                id: nextId(),
-                type: "mcpApp",
+              setActiveApp({
                 uri: String(frame.uri),
                 server: String(frame.server),
                 toolName: String(frame.toolName),
@@ -217,6 +225,7 @@ export function useAgentSession(): AgentSession {
     setConflicts([]);
     setShortlistSize(0);
     setTranscript([]);
+    setActiveApp(null);
     store.current = new SurfaceStore();
     setSurfaces(new Map());
   }, []);
@@ -229,6 +238,7 @@ export function useAgentSession(): AgentSession {
     conflicts,
     shortlistSize,
     transcript,
+    activeApp,
     surfaces,
     busy,
     connectionError,

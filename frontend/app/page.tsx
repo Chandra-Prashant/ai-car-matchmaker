@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { A2uiRenderer } from "@/components/a2ui/A2uiRenderer";
+import { McpAppFrame } from "@/components/mcp-host/McpAppFrame";
 import { TranscriptItem } from "@/components/Transcript";
 import { useAgentSession } from "@/hooks/useAgentSession";
 
@@ -181,6 +182,18 @@ export default function Home() {
               onAppMessage={(text) => void submit(text)}
             />
           ))}
+
+          {session.activeApp && (
+            <McpAppFrame
+              key={session.activeApp.toolName}
+              uri={session.activeApp.uri}
+              server={session.activeApp.server}
+              toolName={session.activeApp.toolName}
+              toolInput={session.activeApp.toolInput}
+              toolResult={session.activeApp.toolResult}
+              onMessage={(text) => void submit(text)}
+            />
+          )}
 
           <div ref={endRef} />
         </section>
